@@ -17,6 +17,9 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.json());
 
+// Routes
+const authRoutes = require('./routes/authRoutes');
+
 // Health check route
 app.get('/api/health', (req, res) => {
   res.status(200).json({
@@ -25,6 +28,9 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Mount auth routes
+app.use('/api/auth', authRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
