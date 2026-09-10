@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Navbar from "../../components/Navbar";
 import FileUploader from "../../components/FileUploader";
+import ProtectedRoute from "../../components/ProtectedRoute";
 import { usePuterStore } from "../../lib/puter";
 import { convertPdfToImage } from "../../lib/pdf2img";
 import { generateUUID } from "../../lib/utils";
@@ -180,6 +181,13 @@ const Upload = () => {
                 </div>
             </section>
         </main>
-    )
+    );
+};
+
+export default function UploadPage() {
+    return (
+        <ProtectedRoute>
+            <Upload />
+        </ProtectedRoute>
+    );
 }
-export default Upload

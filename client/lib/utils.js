@@ -19,3 +19,12 @@ export function formatSize(bytes) {
 }
 
 export const generateUUID = () => crypto.randomUUID();
+
+export function getSafeRedirectUrl(nextParam) {
+  if (!nextParam || typeof nextParam !== 'string') return '/';
+  if (nextParam.startsWith('/') && !nextParam.startsWith('//') && !nextParam.includes(':')) {
+    return nextParam;
+  }
+  return '/';
+}
+

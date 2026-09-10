@@ -6,20 +6,15 @@ import { usePuterStore } from "@/lib/puter";
 import Summary from "@/components/Summary";
 import ATS from "../../../components/ATS";
 import Details from "@/components/Details";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 const Resume = () => {
-    const { auth, isLoading, fs, kv } = usePuterStore();
+    const { fs, kv } = usePuterStore();
     const { id } = useParams();
     const router = useRouter();
     const [imageUrl, setImageUrl] = useState('');
     const [resumeUrl, setResumeUrl] = useState('');
     const [feedback, setFeedback] = useState(null);
-
-    useEffect(() => {
-        if (!isLoading && !auth.isAuthenticated) {
-            router.push(`/auth?next=/resume/${id}`);
-        }
-    }, [isLoading, auth?.isAuthenticated, id, router]);
 
     useEffect(() => {
         const loadResume = async () => {
@@ -94,4 +89,10 @@ const Resume = () => {
     )
 }
 
-export default Resume
+export default function ResumePage() {
+    return (
+        <ProtectedRoute>
+            <Resume />
+        </ProtectedRoute>
+    );
+}

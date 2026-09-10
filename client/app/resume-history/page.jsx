@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import ResumeCard from "@/components/ResumeCard";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import { usePuterStore } from "@/lib/puter";
 
-export default function ResumeHistory() {
+function ResumeHistory() {
     const router = useRouter();
     const { auth, isLoading, kv, fs } = usePuterStore();
 
@@ -16,13 +17,6 @@ export default function ResumeHistory() {
     const [isWiping, setIsWiping] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedFilter, setSelectedFilter] = useState("all");
-
-    // Redirect to auth if not authenticated
-    useEffect(() => {
-        if (!isLoading && !auth.isAuthenticated) {
-            router.push("/auth?next=/resume-history");
-        }
-    }, [isLoading, auth?.isAuthenticated, router]);
 
     // Fetch all resumes from Puter KV
     useEffect(() => {
@@ -312,3 +306,12 @@ export default function ResumeHistory() {
         </main>
     );
 }
+
+export default function ResumeHistoryPage() {
+    return (
+        <ProtectedRoute>
+            <ResumeHistory />
+        </ProtectedRoute>
+    );
+}
+

@@ -1,58 +1,29 @@
-"use client"
-import { usePuterStore } from "../../lib/puter";
+"use client";
+
 import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-
-const AuthContent = () => {
-    const { isLoading, auth } = usePuterStore();
+function AuthRedirect() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const next = searchParams.get('next') || '/';
+    const next = searchParams.get("next");
 
     useEffect(() => {
-        if (auth.isAuthenticated) router.push(next);
-    }, [auth.isAuthenticated, next])
+        const query = next ? `?next=${encodeURIComponent(next)}` : "";
+        router.replace(`/auth/login${query}`);
+    }, [next, router]);
 
     return (
-        <main className="bg-gradient-to-br from-pink-200 via-gray-200 to-gray-400 bg-cover min-h-screen flex items-center justify-center">
-            <div className="gradient-border shadow-lg">
-                <section className="flex flex-col gap-8 bg-white rounded-2xl p-10">
-                    <div className="flex flex-col items-center gap-2 text-center">
-                        <h1>Welcome</h1>
-                        <h2>Log In to Continue Your Job Journey</h2>
-                    </div>
-                    <div>
-                        {isLoading ? (
-                            <button className="auth-button animate-pulse">
-                                <p>Signing you in...</p>
-                            </button>
-                        ) : (
-                            <>
-                                {auth.isAuthenticated ? (
-                                    <button className="auth-button" onClick={auth.signOut}>
-                                        <p>Log Out</p>
-                                    </button>
-                                ) : (
-                                    <button className="auth-button" onClick={auth.signIn}>
-                                        <p>Log In</p>
-                                    </button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                </section>
-            </div>
-        </main>
-    )
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+    );
 }
 
-const Auth = () => {
+export default function AuthPage() {
     return (
         <Suspense fallback={null}>
-            <AuthContent />
+            <AuthRedirect />
         </Suspense>
-    )
+    );
 }
-
-export default Auth
