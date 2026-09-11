@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const uploadResumeFile = require('../middleware/upload');
 const {
   createResume,
   getResumes,
@@ -12,7 +13,7 @@ const {
 // All resume routes are protected by auth middleware
 router.use(auth);
 
-router.post('/', createResume);
+router.post('/', uploadResumeFile, createResume);
 router.get('/', getResumes);
 router.get('/:id', getResumeById);
 router.delete('/:id', deleteResume);
