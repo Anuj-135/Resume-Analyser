@@ -19,6 +19,7 @@ app.use(express.json());
 
 // Routes
 const authRoutes = require('./routes/authRoutes');
+const resumeRoutes = require('./routes/resumeRoutes');
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -29,8 +30,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Mount auth routes
+// Mount routes
 app.use('/api/auth', authRoutes);
+app.use('/api/resumes', resumeRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
