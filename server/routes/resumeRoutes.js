@@ -8,12 +8,14 @@ const {
   getResumeById,
   deleteResume,
   deleteAllResumes,
+  analyzeResume,
 } = require('../controllers/resumeController');
 
 // All resume routes are protected by auth middleware
 router.use(auth);
 
 router.post('/', uploadResumeFile, createResume);
+router.post('/:id/analyze', analyzeResume);
 router.get('/', getResumes);
 router.get('/:id', getResumeById);
 router.delete('/:id', deleteResume);

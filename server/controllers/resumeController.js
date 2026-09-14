@@ -2,6 +2,8 @@ const path = require('path');
 const fs = require('fs');
 const mongoose = require('mongoose');
 const Resume = require('../models/Resume');
+const pdfService = require('../services/pdfService');
+const aiService = require('../services/aiService');
 
 const uploadDir = path.join(__dirname, '../uploads');
 
@@ -162,10 +164,81 @@ const deleteAllResumes = async (req, res) => {
   }
 };
 
+// Analyze an uploaded resume using Gemini AI
+const analyzeResume = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid resume ID format' });
+    }
+
+    // Isolated ownership verification
+    const resume = await Resume.findOne({ _id: id, userId: req.userId });
+
+    if (!resume) {
+      return res.status(404).json({ message: 'Resume not found' });
+    }
+
+    if (!resume.resumePath) {
+      return res.status(400).json({ message: 'Resume does not have an uploaded file to analyze' });
+    }
+
+    // Extract PDF text
+    let resumeText;
+    try {
+      resumeText = await pdfService.extractTextFromPdf(resume.resumePath);
+    } catch (extractErr) {
+      if (extractErr.code === 'FILE_NOT_FOUND') {
+        return res.status(404).json({ message: 'Stored resume file not found on server' });
+      }
+      if (extractErr.code === 'EMPTY_TEXT') {
+        return res.status(422).json({ message: 'Resume PDF does not contain extractable text' });
+      }
+      if (extractErr.code === 'CORRUPTED_PDF' || extractErr.code === 'FILE_READ_ERROR') {
+        return res.status(400).json({ message: 'Failed to extract text from resume PDF' });
+      }
+      return res.status(400).json({ message: extractErr.message || 'Error processing resume file' });
+    }
+
+    // Call AI Service
+    let feedback;
+    try {
+      feedback = await aiService.analyzeResume({
+        resumeText,
+        companyName: resume.companyName,
+        jobTitle: resume.jobTitle,
+        jobDescription: resume.jobDescription,
+      });
+    } catch (aiErr) {
+      console.error('AI analysis error:', aiErr.code || aiErr.message);
+      const statusCode = aiErr.statusCode || 502;
+      return res.status(statusCode).json({
+        message: aiErr.code === 'AI_API_ERROR'
+          ? 'AI analysis service is temporarily unavailable'
+          : 'AI service returned an invalid response structure',
+      });
+    }
+
+    // Persist validated feedback to MongoDB
+    resume.feedback = feedback;
+    await resume.save();
+
+    return res.status(200).json({
+      message: 'Resume analyzed successfully',
+      feedback: resume.feedback,
+    });
+  } catch (error) {
+    console.error('Analyze resume error:', error);
+    return res.status(500).json({ message: 'Server error analyzing resume' });
+  }
+};
+
 module.exports = {
   createResume,
   getResumes,
   getResumeById,
   deleteResume,
   deleteAllResumes,
+  analyzeResume,
 };
