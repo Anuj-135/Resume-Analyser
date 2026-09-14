@@ -6,87 +6,68 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import ResumeCard from "@/components/ResumeCard";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { usePuterStore } from "@/lib/puter";
+import { useResumeStore } from "@/lib/store";
 
 function ResumeHistory() {
     const router = useRouter();
-    const { auth, isLoading, kv, fs } = usePuterStore();
+    const {
+        resumes,
+        isFetching,
+        isDeleting,
+        deletingId,
+        error,
+        getResumes,
+        deleteResume,
+        deleteAllResumes,
+        clearError,
+    } = useResumeStore();
 
-    const [resumes, setResumes] = useState([]);
-    const [isFetching, setIsFetching] = useState(true);
-    const [isWiping, setIsWiping] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedFilter, setSelectedFilter] = useState("all");
+    const [actionError, setActionError] = useState("");
 
-    // Fetch all resumes from Puter KV
+    // Fetch user resumes from Express/MongoDB backend
     useEffect(() => {
-        const fetchResumes = async () => {
-            if (!auth.isAuthenticated) return;
+        getResumes();
+    }, [getResumes]);
 
-            setIsFetching(true);
-            try {
-                // kv.list("resume:*", true) returns [{ key, value }]
-                const entries = await kv.list("resume:*", true);
-                if (!entries || entries.length === 0) {
-                    setResumes([]);
-                    setIsFetching(false);
-                    return;
-                }
+    const handleDeleteResume = async (id) => {
+        const confirmed = window.confirm(
+            "Are you sure you want to delete this resume? This cannot be undone."
+        );
+        if (!confirmed) return;
 
-                // Parse JSON for each entry
-                const parsed = entries
-                    .map((entry) => {
-                        try {
-                            return typeof entry.value === "string"
-                                ? JSON.parse(entry.value)
-                                : entry.value;
-                        } catch {
-                            return null;
-                        }
-                    })
-                    .filter(Boolean);
-
-                // Eagerly load all image blobs and create object URLs
-                const withImages = await Promise.all(
-                    parsed.map(async (resume) => {
-                        let imageUrl = null;
-                        if (resume.imagePath) {
-                            try {
-                                const blob = await fs.read(resume.imagePath);
-                                if (blob) {
-                                    imageUrl = URL.createObjectURL(
-                                        new Blob([blob], { type: "image/png" })
-                                    );
-                                }
-                            } catch {
-                                // image unavailable — use null
-                            }
-                        }
-                        return { ...resume, imagePath: imageUrl };
-                    })
-                );
-
-                setResumes(withImages);
-            } catch (err) {
-                console.error("Failed to fetch resumes:", err);
-                setResumes([]);
-            } finally {
-                setIsFetching(false);
+        setActionError("");
+        clearError();
+        try {
+            const result = await deleteResume(id);
+            if (!result.success) {
+                setActionError(result.error || "Failed to delete resume");
             }
-        };
+        } catch (err) {
+            console.error("Delete resume error:", err);
+            setActionError("An unexpected error occurred while deleting the resume.");
+        }
+    };
 
-        fetchResumes();
+    const handleWipeAll = async () => {
+        const confirmed = window.confirm(
+            `Are you sure you want to delete all ${resumes.length} resume(s)? This cannot be undone.`
+        );
+        if (!confirmed) return;
 
-        // Revoke object URLs on unmount to avoid memory leaks
-        return () => {
-            resumes.forEach((r) => {
-                if (r.imagePath && r.imagePath.startsWith("blob:")) {
-                    URL.revokeObjectURL(r.imagePath);
-                }
-            });
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [auth.isAuthenticated]);
+        setActionError("");
+        clearError();
+        try {
+            const result = await deleteAllResumes();
+            if (!result.success) {
+                setActionError(result.error || "Failed to wipe resumes");
+            }
+        } catch (err) {
+            console.error("Wipe data error:", err);
+            setActionError("An unexpected error occurred while wiping data.");
+        }
+    };
 
     const filteredResumes = resumes.filter((resume) => {
         const matchesSearch =
@@ -103,12 +84,19 @@ function ResumeHistory() {
         return true;
     });
 
+    const displayError = actionError || error;
+
     return (
         <main className="min-h-screen bg-gradient-to-br from-pink-200 via-gray-200 to-gray-400 flex flex-col pt-6 pb-16">
             <Navbar />
 
             {/* Header Section */}
             <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
+                {displayError && (
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-2xl text-center">
+                        {displayError}
+                    </div>
+                )}
 
                 {/* Dashboard Controls Bar */}
                 <div className="bg-white/80 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-gray-100 mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -213,7 +201,12 @@ function ResumeHistory() {
                 ) : filteredResumes.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                         {filteredResumes.map((resume) => (
-                            <ResumeCard key={resume.id} resume={resume} />
+                            <ResumeCard
+                                key={resume._id || resume.id}
+                                resume={resume}
+                                onDelete={handleDeleteResume}
+                                isDeleting={isDeleting && deletingId === (resume._id || resume.id)}
+                            />
                         ))}
                     </div>
                 ) : (
@@ -255,35 +248,11 @@ function ResumeHistory() {
                     <div className="flex justify-center mt-12">
                         <button
                             id="wipe-data-btn"
-                            onClick={async () => {
-                                const confirmed = window.confirm(
-                                    `Are you sure you want to delete all ${resumes.length} resume(s)? This cannot be undone.`
-                                );
-                                if (!confirmed) return;
-
-                                setIsWiping(true);
-                                try {
-                                    // flush() wipes all KV entries for this app
-                                    // (safe — all KV data are resume:* entries)
-                                    await kv.flush();
-                                    // Revoke object URLs to free memory
-                                    resumes.forEach((r) => {
-                                        if (r.imagePath?.startsWith("blob:")) {
-                                            URL.revokeObjectURL(r.imagePath);
-                                        }
-                                    });
-                                    setResumes([]);
-                                } catch (err) {
-                                    console.error("Failed to wipe data:", err);
-                                    alert("Something went wrong while wiping data. Please try again.");
-                                } finally {
-                                    setIsWiping(false);
-                                }
-                            }}
-                            disabled={isWiping}
-                            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold border-2 border-red-300 text-red-500 bg-white/70 hover:bg-red-50 hover:border-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                            onClick={handleWipeAll}
+                            disabled={isDeleting}
+                            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold border-2 border-red-300 text-red-500 bg-white/70 hover:bg-red-50 hover:border-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm cursor-pointer"
                         >
-                            {isWiping ? (
+                            {isDeleting && !deletingId ? (
                                 <>
                                     <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -314,4 +283,5 @@ export default function ResumeHistoryPage() {
         </ProtectedRoute>
     );
 }
+
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import api from "@/lib/axios";
+import { useResumeStore } from "@/lib/store";
 import { usePuterStore } from "@/lib/puter";
 import Summary from "@/components/Summary";
 import ATS from "@/components/ATS";
@@ -14,6 +15,7 @@ const Resume = () => {
     const { fs, kv } = usePuterStore();
     const { id } = useParams();
     const router = useRouter();
+    const getResumeById = useResumeStore((state) => state.getResumeById);
     const [imageUrl, setImageUrl] = useState('');
     const [resumeUrl, setResumeUrl] = useState('');
     const [feedback, setFeedback] = useState(null);
@@ -24,12 +26,11 @@ const Resume = () => {
             if (!id) return;
             setLoadError('');
 
-            // 1. Prefer MongoDB backend API
+            // 1. Prefer MongoDB backend API via resume store action
             try {
-                const response = await api.get(`/resumes/${id}`);
-                const resumeData = response.data?.resume;
-
-                if (resumeData) {
+                const result = await getResumeById(id);
+                if (result.success && result.resume) {
+                    const resumeData = result.resume;
                     setFeedback(resumeData.feedback || null);
 
                     if (resumeData.resumePath) {
@@ -43,9 +44,9 @@ const Resume = () => {
                     }
                     return; // Successfully loaded from MongoDB backend
                 }
-            } catch (apiErr) {
-                const status = apiErr.response?.status;
-                const errMsg = apiErr.response?.data?.message || '';
+
+                const status = result.status;
+                const errMsg = result.error || '';
 
                 // Only fall back to Puter KV for a genuine "resume not found" / legacy-record case
                 // (e.g. 404 Not Found, or 400 with 'Invalid resume ID format' for legacy UUIDs)
@@ -53,10 +54,13 @@ const Resume = () => {
 
                 if (!isLegacyOrNotFound) {
                     // Do NOT fall back to Puter for 401, 403, 500, or network errors
-                    console.error('API error fetching resume:', apiErr);
                     setLoadError(errMsg || 'Failed to load resume from server');
                     return;
                 }
+            } catch (apiErr) {
+                console.error('Error fetching resume from store:', apiErr);
+                setLoadError('Failed to load resume from server');
+                return;
             }
 
             // 2. Puter fallback for genuine legacy records / not found on Mongo
@@ -99,7 +103,7 @@ const Resume = () => {
         };
 
         loadResume();
-    }, [id, fs, kv]);
+    }, [id, fs, kv, getResumeById]);
 
     return (
         <main className="!pt-0 bg-cover">

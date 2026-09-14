@@ -95,13 +95,74 @@ export const useAuthStore = create((set, get) => ({
 export const useStore = useAuthStore;
 
 export const useResumeStore = create((set, get) => ({
+  resumes: [],
   currentResume: null,
   loading: false,
+  isFetching: false,
+  isDeleting: false,
+  deletingId: null,
   statusText: '',
   error: null,
 
   clearError: () => set({ error: null }),
-  resetStatus: () => set({ loading: false, error: null, statusText: '' }),
+  resetStatus: () =>
+    set({
+      loading: false,
+      isFetching: false,
+      isDeleting: false,
+      deletingId: null,
+      error: null,
+      statusText: '',
+    }),
+
+  getResumes: async () => {
+    set({ isFetching: true, error: null });
+    try {
+      const res = await api.get('/resumes');
+      const resumes = res.data?.resumes || [];
+      set({ resumes, isFetching: false, error: null });
+      return { success: true, resumes };
+    } catch (err) {
+      const message =
+        err.response?.data?.message || err.message || 'Failed to fetch resumes';
+      set({ isFetching: false, error: message });
+      return { success: false, status: err.response?.status, error: message };
+    }
+  },
+
+  deleteResume: async (id) => {
+    set({ isDeleting: true, deletingId: id, error: null });
+    try {
+      await api.delete(`/resumes/${id}`);
+      // Only update local state after confirmed successful backend deletion
+      set((state) => ({
+        resumes: state.resumes.filter((r) => (r._id || r.id) !== id),
+        isDeleting: false,
+        deletingId: null,
+      }));
+      return { success: true };
+    } catch (err) {
+      const message =
+        err.response?.data?.message || err.message || 'Failed to delete resume';
+      set({ isDeleting: false, deletingId: null, error: message });
+      return { success: false, status: err.response?.status, error: message };
+    }
+  },
+
+  deleteAllResumes: async () => {
+    set({ isDeleting: true, error: null });
+    try {
+      await api.delete('/resumes');
+      // Only update local state after confirmed successful backend deletion
+      set({ resumes: [], isDeleting: false });
+      return { success: true };
+    } catch (err) {
+      const message =
+        err.response?.data?.message || err.message || 'Failed to delete all resumes';
+      set({ isDeleting: false, error: message });
+      return { success: false, status: err.response?.status, error: message };
+    }
+  },
 
   analyzeResume: async (formData) => {
     let resumeId = null;
@@ -138,12 +199,13 @@ export const useResumeStore = create((set, get) => ({
         feedback,
       };
 
-      set({
+      set((state) => ({
         currentResume: fullResume,
+        resumes: [fullResume, ...state.resumes.filter((r) => (r._id || r.id) !== resumeId)],
         loading: false,
         statusText: 'Analysis complete!',
         error: null,
-      });
+      }));
 
       return {
         success: true,
@@ -190,3 +252,4 @@ export const useResumeStore = create((set, get) => ({
     }
   },
 }));
+
