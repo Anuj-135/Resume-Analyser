@@ -3,16 +3,13 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import api from "@/lib/axios";
 import { useResumeStore } from "@/lib/store";
-import { usePuterStore } from "@/lib/puter";
 import Summary from "@/components/Summary";
 import ATS from "@/components/ATS";
 import Details from "@/components/Details";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 const Resume = () => {
-    const { fs, kv } = usePuterStore();
     const { id } = useParams();
     const router = useRouter();
     const getResumeById = useResumeStore((state) => state.getResumeById);
@@ -26,7 +23,6 @@ const Resume = () => {
             if (!id) return;
             setLoadError('');
 
-            // 1. Prefer MongoDB backend API via resume store action
             try {
                 const result = await getResumeById(id);
                 if (result.success && result.resume) {
@@ -42,68 +38,18 @@ const Resume = () => {
                     if (resumeData.imagePath) {
                         setImageUrl(resumeData.imagePath);
                     }
-                    return; // Successfully loaded from MongoDB backend
-                }
-
-                const status = result.status;
-                const errMsg = result.error || '';
-
-                // Only fall back to Puter KV for a genuine "resume not found" / legacy-record case
-                // (e.g. 404 Not Found, or 400 with 'Invalid resume ID format' for legacy UUIDs)
-                const isLegacyOrNotFound = status === 404 || (status === 400 && errMsg.includes('Invalid resume ID format'));
-
-                if (!isLegacyOrNotFound) {
-                    // Do NOT fall back to Puter for 401, 403, 500, or network errors
-                    setLoadError(errMsg || 'Failed to load resume from server');
                     return;
                 }
+
+                setLoadError(result.error || 'Resume not found');
             } catch (apiErr) {
                 console.error('Error fetching resume from store:', apiErr);
                 setLoadError('Failed to load resume from server');
-                return;
-            }
-
-            // 2. Puter fallback for genuine legacy records / not found on Mongo
-            try {
-                if (kv) {
-                    const resume = await kv.get(`resume:${id}`);
-
-                    if (!resume) {
-                        setLoadError('Resume not found');
-                        return;
-                    }
-
-                    const data = JSON.parse(resume);
-
-                    if (data.resumePath && fs) {
-                        const resumeBlob = await fs.read(data.resumePath);
-                        if (resumeBlob) {
-                            const pdfBlob = new Blob([resumeBlob], { type: 'application/pdf' });
-                            const resumeUrl = URL.createObjectURL(pdfBlob);
-                            setResumeUrl(resumeUrl);
-                        }
-                    }
-
-                    if (data.imagePath && fs) {
-                        const imageBlob = await fs.read(data.imagePath);
-                        if (imageBlob) {
-                            const imageUrl = URL.createObjectURL(imageBlob);
-                            setImageUrl(imageUrl);
-                        }
-                    }
-
-                    setFeedback(data.feedback);
-                } else {
-                    setLoadError('Resume not found');
-                }
-            } catch (puterErr) {
-                console.error('Puter KV fallback error:', puterErr);
-                setLoadError('Failed to load resume details');
             }
         };
 
         loadResume();
-    }, [id, fs, kv, getResumeById]);
+    }, [id, getResumeById]);
 
     return (
         <main className="!pt-0 bg-cover">

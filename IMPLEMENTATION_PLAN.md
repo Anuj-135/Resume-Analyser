@@ -14,10 +14,10 @@ don't start the next phase until the current one is actually working end to end.
 - [x] Folder structure recreated: `app/auth/login`, `app/auth/register`, `app/resume/[id]`,
       `app/resume-history`, `app/upload`, all `components/`, `constants/index.js`,
       `lib/axios.js`, `lib/pdf2img.js`, `lib/store.js`, `lib/utils.js`
-- [ ] `lib/axios.js` and `lib/store.js` are placeholder files — not yet implemented
-- [ ] Puter script (`layout.jsx`) and any remaining `puter` references — not yet removed
-- [ ] `server/` — not created yet
-- [ ] MongoDB, Gemini API key — not set up yet
+- [x] `lib/axios.js` and `lib/store.js` implemented
+- [x] Puter script (`layout.jsx`) and all `puter` references removed (Phase 8 completed)
+- [x] `server/` created and running Express + MongoDB + Multer + Gemini
+- [x] MongoDB and Gemini API key set up and integrated
 
 ---
 
@@ -154,19 +154,21 @@ renders correctly, wipe actually clears the database (and ideally the uploaded f
 
 ---
 
-## Phase 8 — Puter Cleanup (Final Audit)
+## Phase 8 — Puter Cleanup (Final Audit) [COMPLETED]
 
 **Goal:** Confirm nothing depends on Puter anymore and remove the last remnants. The actual
 functional replacement already happened progressively — auth in Phase 2, file/KV/AI in
 Phases 4–7 — so this phase is verification and file deletion, not a rewrite.
 
-- Delete `client/lib/puter.js` (if not already replaced by `store.js`)
-- Remove the Puter `<script>` tag from `app/layout.jsx`
-- Remove `puter` from `client/package.json` if it's listed as a dependency
-- Grep the whole `client/` folder for `puter` to catch anything missed
+- [x] Delete `client/lib/puter.js` (replaced by `store.js`)
+- [x] Delete `client/app/auth/page.jsx` (legacy transitional redirect route)
+- [x] Remove the Puter `<script>` tag and store initialization from `app/layout.jsx`
+- [x] Remove legacy Puter KV/FS fallback from `app/resume/[id]/page.jsx`
+- [x] Confirm no `puter` in `client/package.json` or `server/package.json`
+- [x] Grep the whole `client/` and `server/` folders for `puter` to catch anything missed (0 functional references)
 
 **Definition of done:** A full-text search for "puter" in `client/` returns nothing except
-maybe this plan file.
+maybe this plan file. (Verified: 0 functional references remaining in client and server).
 
 ---
 
