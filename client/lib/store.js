@@ -97,8 +97,10 @@ export const useStore = useAuthStore;
 export const useResumeStore = create((set, get) => ({
   resumes: [],
   currentResume: null,
+  profileAnalytics: null,
   loading: false,
   isFetching: false,
+  isFetchingAnalytics: false,
   isDeleting: false,
   deletingId: null,
   statusText: '',
@@ -109,6 +111,7 @@ export const useResumeStore = create((set, get) => ({
     set({
       loading: false,
       isFetching: false,
+      isFetchingAnalytics: false,
       isDeleting: false,
       deletingId: null,
       error: null,
@@ -244,6 +247,25 @@ export const useResumeStore = create((set, get) => ({
     } catch (err) {
       const message = err.response?.data?.message || err.message || 'Failed to fetch resume';
       set({ loading: false, error: message });
+      return {
+        success: false,
+        status: err.response?.status,
+        error: message,
+      };
+    }
+  },
+
+  getProfileAnalytics: async () => {
+    set({ isFetchingAnalytics: true, error: null });
+    try {
+      const res = await api.get('/profile/analytics');
+      const data = res.data;
+      set({ profileAnalytics: data, isFetchingAnalytics: false, error: null });
+      return { success: true, data };
+    } catch (err) {
+      const message =
+        err.response?.data?.message || err.message || 'Failed to fetch profile analytics';
+      set({ isFetchingAnalytics: false, error: message });
       return {
         success: false,
         status: err.response?.status,

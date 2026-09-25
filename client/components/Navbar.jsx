@@ -20,10 +20,16 @@ const Navbar = () => {
       </Link>
 
       <div className="flex items-center gap-3">
-        {isAuthenticated && user?.name && (
-          <span className="hidden sm:inline-block text-xs font-medium text-gray-600 bg-gray-100/80 px-3 py-1 rounded-full">
-            {user.name}
-          </span>
+        {isAuthenticated && (
+          <Link
+            id="user-avatar-btn"
+            href="/profile"
+            title={user?.name ? `${user.name} - View Profile` : "View Profile"}
+            aria-label="View Profile"
+            className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-[#606beb] to-[#8e98ff] text-white text-xs sm:text-sm font-bold shadow-sm hover:scale-105 hover:shadow-indigo-500/25 transition-all duration-200 cursor-pointer select-none"
+          >
+            {(user?.name?.trim()?.charAt(0) || "U").toUpperCase()}
+          </Link>
         )}
 
         {isAuthenticated ? (

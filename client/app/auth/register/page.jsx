@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import { getSafeRedirectUrl } from "@/lib/utils";
+import PasswordInput from "@/components/PasswordInput";
 
 function RegisterForm() {
   const router = useRouter();
@@ -104,9 +105,7 @@ function RegisterForm() {
               <label className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Password
               </label>
-              <input
-                type="password"
-                placeholder="••••••••"
+              <PasswordInput
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"

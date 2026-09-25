@@ -24,6 +24,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Routes
 const authRoutes = require('./routes/authRoutes');
 const resumeRoutes = require('./routes/resumeRoutes');
+const profileRoutes = require('./routes/profileRoutes');
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -37,6 +38,7 @@ app.get('/api/health', (req, res) => {
 // Mount routes
 app.use('/api/auth', authRoutes);
 app.use('/api/resumes', resumeRoutes);
+app.use('/api/profile', profileRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;

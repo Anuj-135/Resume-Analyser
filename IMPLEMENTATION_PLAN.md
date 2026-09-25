@@ -200,5 +200,34 @@ upload, analyze, history — with no localhost references left.
 
 ---
 
-*One phase at a time — say the phase number when you're ready to start, and we'll build it
-piece by piece from there.*
+## Pre-Deployment Features (Password Toggle, Navbar Avatar, Profile & Analytics)
+
+- [x] **Phase 1 — Password Visibility Toggle:**
+  - Reusable `client/components/PasswordInput.jsx` with Lucide `Eye`/`EyeOff` icons.
+  - Full accessibility (`type="button"`, `aria-label`, `title`).
+  - Integrated into `app/auth/login/page.jsx` and `app/auth/register/page.jsx`.
+- [x] **Phase 2 — Avatar in Navbar:**
+  - Dynamic uppercase initial avatar (e.g., "Anuj Chahar" -> "A") with fallback "U".
+  - Styled with RESUMEIT gradient (`from-[#606beb] to-[#8e98ff]`), hover scaling, accessible title.
+  - Linked to `/profile`; existing `#logout-btn` kept intact.
+- [x] **Phase 3 — Profile Route & UI:**
+  - `client/app/profile/page.jsx` protected via existing `<ProtectedRoute>`.
+  - Modular components in `client/components/profile/`:
+    - `ProfileHeader.jsx`: Account info, initial avatar, email, member since, back link.
+    - `AnalyticsOverview.jsx`: 4 metric cards (Total Analyses, Avg Score, Highest Score, Lowest Score).
+    - `ScoreDistribution.jsx`: High (75+), Medium (50-74), Low (<50) tier breakdown.
+    - `CategoryScores.jsx`: Average scores across 5 Gemini categories (ATS, Content, Structure, Tone, Skills).
+    - `RecentAnalyses.jsx`: Clickable top 5 latest analyses linking to `/resume/:id`.
+  - Empty state with CTA to `/upload` when 0 analyses exist; loading skeleton and error states.
+- [x] **Phase 4 — Backend Profile Analytics API:**
+  - Dedicated service `server/services/profileAnalyticsService.js` with centralized score thresholds.
+  - Controller `server/controllers/profileController.js` and route `server/routes/profileRoutes.js`.
+  - Mounted at `GET /api/profile/analytics` in `server/server.js`, protected by `auth` middleware.
+  - Multi-tenant security guarantee: strictly uses `req.userId` from JWT cookie; zero client-supplied IDs.
+  - Robust division-by-zero protection and category-specific divisor counts.
+- [x] **Phase 5 — Frontend Integration:**
+  - Integrated Zustand `useResumeStore` with `profileAnalytics`, `isFetchingAnalytics`, and `getProfileAnalytics()`.
+- [x] **Phase 6 & 7 — Verification & Testing:**
+  - Unit tests and integration tests verified empty state, populated analytics, category averages, and multi-tenant isolation.
+  - Zero ESLint errors across the client application.
+
