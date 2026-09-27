@@ -1,61 +1,45 @@
-const path = require('path');
-const fs = require('fs');
 const { PDFParse } = require('pdf-parse');
-
-const UPLOAD_DIR = path.resolve(__dirname, '../uploads');
+const cloudinaryService = require('./cloudinaryService');
 
 /**
- * Safely resolves the stored resume path within the server/uploads boundary,
- * guarding against directory traversal attacks.
+ * Extracts plain text from an authenticated resume PDF stored in Cloudinary.
  *
- * @param {string} storedResumePath - Path stored in DB (e.g. '/uploads/resume-xxx.pdf')
- * @returns {string} Safe absolute filesystem path
+ * @param {string} resumePublicId - Exact Cloudinary public_id stored in DB
+ * @returns {Promise<string>} Trimmed extracted text
  */
-const resolveSafePath = (storedResumePath) => {
-  if (!storedResumePath || typeof storedResumePath !== 'string') {
-    const err = new Error('Invalid resume file path');
+const extractTextFromPdf = async (resumePublicId) => {
+  if (!resumePublicId || typeof resumePublicId !== 'string') {
+    const err = new Error('Invalid resume public ID');
     err.code = 'INVALID_PATH';
     throw err;
   }
 
-  const filename = path.basename(storedResumePath);
-  const resolvedPath = path.resolve(UPLOAD_DIR, filename);
-
-  // Assert target path is strictly within UPLOAD_DIR
-  if (!resolvedPath.startsWith(UPLOAD_DIR + path.sep)) {
-    const err = new Error('Access denied: Invalid file path traversal');
-    err.code = 'PATH_TRAVERSAL';
-    throw err;
-  }
-
-  return resolvedPath;
-};
-
-/**
- * Extracts plain text from a stored resume PDF file.
- *
- * @param {string} storedResumePath - Path stored in DB (e.g. '/uploads/resume-xxx.pdf')
- * @returns {Promise<string>} Trimmed extracted text
- */
-const extractTextFromPdf = async (storedResumePath) => {
-  const filePath = resolveSafePath(storedResumePath);
-
-  // Verify file existence and read permissions
-  try {
-    await fs.promises.access(filePath, fs.constants.R_OK);
-  } catch (accessErr) {
-    const err = new Error('Stored resume file not found on server');
+  // Generate short-lived signed download URL
+  const signedUrl = cloudinaryService.generateSignedUrl(resumePublicId);
+  if (!signedUrl) {
+    const err = new Error('Unable to generate access URL for resume');
     err.code = 'FILE_NOT_FOUND';
     throw err;
   }
 
-  // Read file into buffer
+  // Fetch file buffer from Cloudinary into memory
   let buffer;
   try {
-    buffer = await fs.promises.readFile(filePath);
-  } catch (readErr) {
-    const err = new Error('Unable to read resume file from disk');
+    const response = await fetch(signedUrl);
+    if (!response.ok) {
+      const err = new Error('Stored resume file not found on server');
+      err.code = 'FILE_NOT_FOUND';
+      throw err;
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    buffer = Buffer.from(arrayBuffer);
+  } catch (fetchErr) {
+    if (fetchErr.code === 'FILE_NOT_FOUND') {
+      throw fetchErr;
+    }
+    const err = new Error('Unable to read resume file from storage');
     err.code = 'FILE_READ_ERROR';
+    err.details = fetchErr.message;
     throw err;
   }
 
@@ -92,6 +76,5 @@ const extractTextFromPdf = async (storedResumePath) => {
 };
 
 module.exports = {
-  resolveSafePath,
   extractTextFromPdf,
 };

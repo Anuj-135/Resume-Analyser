@@ -1,25 +1,10 @@
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
-const crypto = require('crypto');
 
-// Ensure uploads directory exists
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// In-memory storage engine: stream buffers directly to Cloudinary without writing to local disk
+const storage = multer.memoryStorage();
 
-// Disk storage engine
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    // Generate secure, collision-proof filename: resume-<timestamp>-<randomHex>.pdf
-    const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
-    cb(null, `resume-${uniqueSuffix}.pdf`);
-  },
-});
+
 
 // File filter: strictly allow PDF files only
 const fileFilter = (req, file, cb) => {

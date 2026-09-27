@@ -1,60 +1,52 @@
-const path = require('path');
-const fs = require('fs');
 const mongoose = require('mongoose');
 const Resume = require('../models/Resume');
 const pdfService = require('../services/pdfService');
 const aiService = require('../services/aiService');
-
-const uploadDir = path.join(__dirname, '../uploads');
+const cloudinaryService = require('../services/cloudinaryService');
 
 // Create a new resume record (supports multipart/form-data upload or JSON)
 const createResume = async (req, res) => {
+  let uploadedPublicId = '';
   try {
     const { companyName, jobTitle, jobDescription } = req.body;
 
     // Validate required text fields
     if (!companyName || !jobTitle || !companyName.trim() || !jobTitle.trim()) {
-      if (req.file) {
-        await fs.promises.unlink(req.file.path).catch(() => {});
-      }
       return res.status(400).json({ message: 'Company name and job title are required' });
     }
 
-    let resumePath = '';
+    let resumePublicId = '';
 
-    // Handle uploaded file if present
+    // Handle uploaded file if present (in-memory buffer from multer.memoryStorage)
     if (req.file) {
-      // Magic-byte verification: check for '%PDF-' signature
-      try {
-        const buffer = Buffer.alloc(5);
-        const fd = await fs.promises.open(req.file.path, 'r');
-        await fd.read(buffer, 0, 5, 0);
-        await fd.close();
-
-        if (buffer.toString('utf8', 0, 5) !== '%PDF-') {
-          await fs.promises.unlink(req.file.path).catch(() => {});
-          return res.status(400).json({ message: 'Invalid PDF file signature' });
-        }
-      } catch (fileErr) {
-        await fs.promises.unlink(req.file.path).catch(() => {});
-        return res.status(400).json({ message: 'Failed to inspect uploaded file' });
+      // Magic-byte verification: check for '%PDF-' signature directly on buffer
+      if (
+        !req.file.buffer ||
+        req.file.buffer.length < 5 ||
+        req.file.buffer.subarray(0, 5).toString('utf8') !== '%PDF-'
+      ) {
+        return res.status(400).json({ message: 'Invalid PDF file signature' });
       }
 
-      // Server-controlled resumePath; never read req.body.resumePath
-      resumePath = `/uploads/${req.file.filename}`;
+      // Stream in-memory buffer to Cloudinary as authenticated raw asset
+      const uploadResult = await cloudinaryService.uploadPdfBuffer(req.file.buffer);
+
+      // Store exact result.public_id returned by Cloudinary without modification
+      resumePublicId = uploadResult.public_id;
+      uploadedPublicId = resumePublicId;
     }
 
     // Strictly server-controlled fields:
     // - userId from req.userId
-    // - resumePath is server-generated or empty
-    // - imagePath is strictly '' in Phase 4
-    // - feedback is strictly {} in Phase 4
+    // - resumePublicId is Cloudinary public_id or empty
+    // - imagePath is strictly ''
+    // - feedback is strictly {}
     const resume = await Resume.create({
       userId: req.userId,
       companyName: companyName.trim(),
       jobTitle: jobTitle.trim(),
       jobDescription: jobDescription ? jobDescription.trim() : '',
-      resumePath,
+      resumePublicId,
       imagePath: '',
       feedback: {},
     });
@@ -65,8 +57,9 @@ const createResume = async (req, res) => {
     });
   } catch (error) {
     console.error('Create resume error:', error);
-    if (req.file) {
-      await fs.promises.unlink(req.file.path).catch(() => {});
+    // If upload to Cloudinary succeeded but document creation failed, roll back the Cloudinary asset
+    if (uploadedPublicId) {
+      await cloudinaryService.deletePdfAsset(uploadedPublicId).catch(() => {});
     }
     return res.status(500).json({ message: 'Server error creating resume' });
   }
@@ -96,20 +89,28 @@ const getResumeById = async (req, res) => {
       return res.status(400).json({ message: 'Invalid resume ID format' });
     }
 
+    // Isolated ownership verification
     const resume = await Resume.findOne({ _id: id, userId: req.userId });
 
     if (!resume) {
       return res.status(404).json({ message: 'Resume not found' });
     }
 
-    return res.status(200).json({ resume });
+    const resumeData = resume.toObject();
+
+    // Generate short-lived authenticated download URL on demand after ownership check
+    if (resume.resumePublicId) {
+      resumeData.resumeUrl = cloudinaryService.generateSignedUrl(resume.resumePublicId);
+    }
+
+    return res.status(200).json({ resume: resumeData });
   } catch (error) {
     console.error('Fetch resume by ID error:', error);
     return res.status(500).json({ message: 'Server error fetching resume' });
   }
 };
 
-// Delete a single resume by ID for the authenticated user, unlinking associated file
+// Delete a single resume by ID for the authenticated user, deleting associated Cloudinary asset
 const deleteResume = async (req, res) => {
   try {
     const { id } = req.params;
@@ -118,17 +119,18 @@ const deleteResume = async (req, res) => {
       return res.status(400).json({ message: 'Invalid resume ID format' });
     }
 
+    // Isolated ownership verification and atomic delete
     const resume = await Resume.findOneAndDelete({ _id: id, userId: req.userId });
 
     if (!resume) {
       return res.status(404).json({ message: 'Resume not found' });
     }
 
-    // Clean up associated file from uploads directory if it exists
-    if (resume.resumePath && resume.resumePath.startsWith('/uploads/')) {
-      const filename = path.basename(resume.resumePath);
-      const filePath = path.join(uploadDir, filename);
-      await fs.promises.unlink(filePath).catch(() => {});
+    // Clean up associated authenticated raw asset from Cloudinary using exact stored public_id
+    if (resume.resumePublicId) {
+      await cloudinaryService.deletePdfAsset(resume.resumePublicId).catch((err) => {
+        console.error('Error deleting asset from Cloudinary:', err);
+      });
     }
 
     return res.status(200).json({ message: 'Resume deleted successfully' });
@@ -138,17 +140,17 @@ const deleteResume = async (req, res) => {
   }
 };
 
-// Delete all resumes for the authenticated user, unlinking associated files (wipe data)
+// Delete all resumes for the authenticated user, deleting associated Cloudinary assets (wipe data)
 const deleteAllResumes = async (req, res) => {
   try {
-    // Find all user's resumes to clean up their files
+    // Find all user's resumes to clean up their Cloudinary assets
     const resumes = await Resume.find({ userId: req.userId });
 
     for (const resume of resumes) {
-      if (resume.resumePath && resume.resumePath.startsWith('/uploads/')) {
-        const filename = path.basename(resume.resumePath);
-        const filePath = path.join(uploadDir, filename);
-        await fs.promises.unlink(filePath).catch(() => {});
+      if (resume.resumePublicId) {
+        await cloudinaryService.deletePdfAsset(resume.resumePublicId).catch((err) => {
+          console.error('Error deleting asset from Cloudinary during wipe:', err);
+        });
       }
     }
 
@@ -180,14 +182,14 @@ const analyzeResume = async (req, res) => {
       return res.status(404).json({ message: 'Resume not found' });
     }
 
-    if (!resume.resumePath) {
+    if (!resume.resumePublicId) {
       return res.status(400).json({ message: 'Resume does not have an uploaded file to analyze' });
     }
 
-    // Extract PDF text
+    // Extract PDF text from Cloudinary authenticated raw asset
     let resumeText;
     try {
-      resumeText = await pdfService.extractTextFromPdf(resume.resumePath);
+      resumeText = await pdfService.extractTextFromPdf(resume.resumePublicId);
     } catch (extractErr) {
       if (extractErr.code === 'FILE_NOT_FOUND') {
         return res.status(404).json({ message: 'Stored resume file not found on server' });

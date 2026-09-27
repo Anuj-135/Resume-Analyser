@@ -23,7 +23,7 @@ const resumeSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
-    resumePath: {
+    resumePublicId: {
       type: String,
       default: '',
     },

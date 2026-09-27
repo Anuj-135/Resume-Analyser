@@ -29,11 +29,14 @@ const Resume = () => {
                     const resumeData = result.resume;
                     setFeedback(resumeData.feedback || null);
 
-                    if (resumeData.resumePath) {
+                    if (resumeData.resumeUrl) {
+                        setResumeUrl(resumeData.resumeUrl);
+                    } else if (resumeData.resumePath) {
                         const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
                         const serverBase = apiBase.replace(/\/api\/?$/, '');
                         setResumeUrl(`${serverBase}${resumeData.resumePath}`);
                     }
+
 
                     if (resumeData.imagePath) {
                         setImageUrl(resumeData.imagePath);
