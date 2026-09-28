@@ -59,7 +59,7 @@ const createResume = async (req, res) => {
     console.error('Create resume error:', error);
     // If upload to Cloudinary succeeded but document creation failed, roll back the Cloudinary asset
     if (uploadedPublicId) {
-      await cloudinaryService.deletePdfAsset(uploadedPublicId).catch(() => {});
+      await cloudinaryService.deletePdfAsset(uploadedPublicId).catch(() => { });
     }
     return res.status(500).json({ message: 'Server error creating resume' });
   }
@@ -213,7 +213,12 @@ const analyzeResume = async (req, res) => {
         jobDescription: resume.jobDescription,
       });
     } catch (aiErr) {
-      console.error('AI analysis error:', aiErr.code || aiErr.message);
+      console.error('AI analysis error:', {
+        code: aiErr.code,
+        message: aiErr.message,
+        originalMessage: aiErr.originalMessage,
+      });
+
       const statusCode = aiErr.statusCode || 502;
       return res.status(statusCode).json({
         message: aiErr.code === 'AI_API_ERROR'
