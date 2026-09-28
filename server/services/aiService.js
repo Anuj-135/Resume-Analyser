@@ -216,7 +216,7 @@ const validateFeedback = (data) => {
 const analyzeResume = async ({ resumeText, companyName, jobTitle, jobDescription }) => {
   const ai = getGeminiClient();
   const prompt = buildPrompt({ resumeText, companyName, jobTitle, jobDescription });
-  const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+  const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
   let response;
   try {
@@ -226,7 +226,6 @@ const analyzeResume = async ({ resumeText, companyName, jobTitle, jobDescription
       config: {
         responseMimeType: 'application/json',
         responseSchema: feedbackJsonSchema,
-        temperature: 0.2,
       },
     });
   } catch (apiError) {
