@@ -133,17 +133,36 @@ resume-analyser/
 │   ├── lib/                         # Axios instance, Zustand stores, utilities
 │   └── package.json                 # Client dependencies & scripts
 │
+├── docs/                            # Project documentation & architectural plans
+│   ├── artifacts/                   # Implementation plans & audit artifacts
+│   ├── Conversion_Plan.md           # Architecture conversion plan
+│   ├── deploymentPlan.md            # Render & Vercel deployment roadmap
+│   ├── IMPLEMENTATION_PLAN.md       # Master phase implementation tracker
+│   ├── PHASE_1_STEP_1_1_WALKTHROUGH.md # Environment validation walkthrough
+│   ├── PHASE_1_STEP_1_2_WALKTHROUGH.md # Error handling walkthrough
+│   ├── PHASE_1_STEP_1_3_PLAN.md     # Request validation plan
+│   └── PHASE_1_STEP_1_4_PLAN.md     # Rate limiting & quota guard plan
+│
 ├── server/                          # Express backend
-│   ├── config/                      # MongoDB connection configuration
+│   ├── config/                      # Database & environment validation (env.js, db.js)
 │   ├── controllers/                 # Route controllers (auth, resumes, profile)
-│   ├── middleware/                  # Auth verification, Multer upload handler
+│   ├── middleware/                  # Auth, rate limiting, validation, upload, error handler
 │   ├── models/                      # Mongoose models (User, Resume)
 │   ├── routes/                      # API route definitions
-│   ├── services/                    # Business logic (aiService, cloudinaryService, etc.)
-│   ├── test_phase5.js               # Backend regression integration test suite
-│   ├── test_retry.js                # AI transient error retry test suite
-│   ├── package.json                 # Backend dependencies & scripts
+│   ├── schemas/                     # Zod request validation schemas
+│   ├── services/                    # Business logic (aiService, cloudinaryService, pdfService)
+│   ├── package.json                 # Backend dependencies & test scripts
 │   └── server.js                    # Server entry point & health check
+│
+├── tests/                           # Backend automated test suites
+│   ├── test_concurrency_guard.js    # Per-user AI concurrency guard unit tests
+│   ├── test_env.js                  # Environment & startup validation test suite
+│   ├── test_error_handling.js       # Centralized error handling & security headers
+│   ├── test_pdf_safeguards.js       # Defensive PDF extraction & buffer bounds tests
+│   ├── test_phase5.js               # Integration test suite (requires test database)
+│   ├── test_rate_limit.js           # Rate limiting & quota test suite
+│   ├── test_retry.js                # AI transient error retry test suite
+│   └── test_validation.js           # Zod schema request validation tests
 │
 └── README.md                        # Project documentation
 ```
@@ -223,16 +242,35 @@ resume-analyser/
 
 ### 3. Running Automated Tests
 
-Run backend integration and retry tests from `server/`:
+Run the default backend automated test suite from `server/`:
 ```bash
 cd server
-node test_phase5.js
-node test_retry.js
+npm test
 ```
+*The default test runner executes all seven core test suites across `tests/` (`test_env.js`, `test_retry.js`, `test_error_handling.js`, `test_validation.js`, `test_rate_limit.js`, `test_concurrency_guard.js`, and `test_pdf_safeguards.js`), currently reporting **121 passing tests (0 failures)**.*
+
+To run individual suites, targeted npm scripts are available from `server/`:
+```bash
+npm run test:env          # Environment & startup validation (23 tests)
+npm run test:retry        # Gemini AI retry with backoff & jitter (7 tests)
+npm run test:error        # Centralized error handling & Helmet (22 tests)
+npm run test:validation   # Zod request schema validation (33 tests)
+npm run test:ratelimit    # Auth & analysis rate limiting (17 tests)
+npm run test:concurrency  # AI analysis concurrency locks (9 tests)
+npm run test:pdf          # Storage timeouts & text length limits (10 tests)
+```
+
+#### Integration Tests
+To run the Phase 5 end-to-end integration test suite:
+```bash
+npm run test:phase5
+```
+> [!NOTE]
+> `test_phase5.js` is a separate integration test suite that connects to a live MongoDB instance and local upload endpoints. It may require a configured test database and compatible test data to execute.
 
 Run client-side linting and build validation:
 ```bash
-cd client
+cd ../client
 npm run lint
 npm run build
 ```
