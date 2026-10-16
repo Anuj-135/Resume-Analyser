@@ -19,7 +19,7 @@ const generateToken = (userId) => {
 };
 
 // Register
-const register = async (req, res) => {
+const register = async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
 
@@ -56,13 +56,16 @@ const register = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Registration error:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Auth Error] Registration failure');
     return res.status(500).json({ message: 'Server error during registration' });
   }
 };
 
 // Login
-const login = async (req, res) => {
+const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
@@ -95,13 +98,16 @@ const login = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Login error:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Auth Error] Login failure');
     return res.status(500).json({ message: 'Server error during login' });
   }
 };
 
 // Logout
-const logout = async (req, res) => {
+const logout = async (req, res, next) => {
   try {
     res.clearCookie('token', {
       httpOnly: true,
@@ -112,13 +118,16 @@ const logout = async (req, res) => {
 
     return res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
-    console.error('Logout error:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Auth Error] Logout failure');
     return res.status(500).json({ message: 'Server error during logout' });
   }
 };
 
 // Me (Get current authenticated user)
-const me = async (req, res) => {
+const me = async (req, res, next) => {
   try {
     const user = await User.findById(req.userId).select('-passwordHash');
 
@@ -135,7 +144,10 @@ const me = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Fetch me error:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Auth Error] Fetch user profile failure');
     return res.status(500).json({ message: 'Server error fetching user profile' });
   }
 };

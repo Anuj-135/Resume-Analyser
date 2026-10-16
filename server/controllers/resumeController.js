@@ -4,8 +4,11 @@ const pdfService = require('../services/pdfService');
 const aiService = require('../services/aiService');
 const cloudinaryService = require('../services/cloudinaryService');
 
+// In-memory set tracking active resume analyses by unambiguous composite [userId, resumeId] key
+const activeAnalyses = new Set();
+
 // Create a new resume record (supports multipart/form-data upload or JSON)
-const createResume = async (req, res) => {
+const createResume = async (req, res, next) => {
   let uploadedPublicId = '';
   try {
     const { companyName, jobTitle, jobDescription } = req.body;
@@ -56,17 +59,22 @@ const createResume = async (req, res) => {
       resume,
     });
   } catch (error) {
-    console.error('Create resume error:', error);
     // If upload to Cloudinary succeeded but document creation failed, roll back the Cloudinary asset
     if (uploadedPublicId) {
-      await cloudinaryService.deletePdfAsset(uploadedPublicId).catch(() => { });
+      await cloudinaryService.deletePdfAsset(uploadedPublicId).catch(() => {
+        console.error('[Cloudinary Cleanup] Failed to delete asset during rollback');
+      });
     }
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Resume Error] Create resume failure');
     return res.status(500).json({ message: 'Server error creating resume' });
   }
 };
 
 // List all resumes for the authenticated user
-const getResumes = async (req, res) => {
+const getResumes = async (req, res, next) => {
   try {
     const resumes = await Resume.find({ userId: req.userId }).sort({ createdAt: -1 });
 
@@ -75,13 +83,16 @@ const getResumes = async (req, res) => {
       resumes,
     });
   } catch (error) {
-    console.error('Fetch resumes error:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Resume Error] Fetch resumes failure');
     return res.status(500).json({ message: 'Server error fetching resumes' });
   }
 };
 
 // Fetch a single resume by ID for the authenticated user
-const getResumeById = async (req, res) => {
+const getResumeById = async (req, res, next) => {
   try {
     const { id } = req.params;
 
@@ -105,13 +116,16 @@ const getResumeById = async (req, res) => {
 
     return res.status(200).json({ resume: resumeData });
   } catch (error) {
-    console.error('Fetch resume by ID error:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Resume Error] Fetch resume by ID failure');
     return res.status(500).json({ message: 'Server error fetching resume' });
   }
 };
 
 // Delete a single resume by ID for the authenticated user, deleting associated Cloudinary asset
-const deleteResume = async (req, res) => {
+const deleteResume = async (req, res, next) => {
   try {
     const { id } = req.params;
 
@@ -128,28 +142,31 @@ const deleteResume = async (req, res) => {
 
     // Clean up associated authenticated raw asset from Cloudinary using exact stored public_id
     if (resume.resumePublicId) {
-      await cloudinaryService.deletePdfAsset(resume.resumePublicId).catch((err) => {
-        console.error('Error deleting asset from Cloudinary:', err);
+      await cloudinaryService.deletePdfAsset(resume.resumePublicId).catch(() => {
+        console.error('[Cloudinary Cleanup] Failed to delete asset during resume deletion');
       });
     }
 
     return res.status(200).json({ message: 'Resume deleted successfully' });
   } catch (error) {
-    console.error('Delete resume error:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Resume Error] Delete resume failure');
     return res.status(500).json({ message: 'Server error deleting resume' });
   }
 };
 
 // Delete all resumes for the authenticated user, deleting associated Cloudinary assets (wipe data)
-const deleteAllResumes = async (req, res) => {
+const deleteAllResumes = async (req, res, next) => {
   try {
     // Find all user's resumes to clean up their Cloudinary assets
     const resumes = await Resume.find({ userId: req.userId });
 
     for (const resume of resumes) {
       if (resume.resumePublicId) {
-        await cloudinaryService.deletePdfAsset(resume.resumePublicId).catch((err) => {
-          console.error('Error deleting asset from Cloudinary during wipe:', err);
+        await cloudinaryService.deletePdfAsset(resume.resumePublicId).catch(() => {
+          console.error('[Cloudinary Cleanup] Failed to delete asset during wipe');
         });
       }
     }
@@ -161,16 +178,29 @@ const deleteAllResumes = async (req, res) => {
       deletedCount: result.deletedCount,
     });
   } catch (error) {
-    console.error('Delete all resumes error:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Resume Error] Delete all resumes failure');
     return res.status(500).json({ message: 'Server error deleting all resumes' });
   }
 };
 
 // Analyze an uploaded resume using Gemini AI
-const analyzeResume = async (req, res) => {
-  try {
-    const { id } = req.params;
+const analyzeResume = async (req, res, next) => {
+  const { id } = req.params;
 
+  // Unambiguous serialization of [userId, resumeId]
+  const lockKey = JSON.stringify([String(req.userId), String(id)]);
+
+  // Synchronously check and acquire lock before any asynchronous operations
+  if (activeAnalyses.has(lockKey)) {
+    return res.status(409).json({ message: 'Analysis already in progress for this resume' });
+  }
+
+  activeAnalyses.add(lockKey);
+
+  try {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Invalid resume ID format' });
     }
@@ -197,10 +227,16 @@ const analyzeResume = async (req, res) => {
       if (extractErr.code === 'EMPTY_TEXT') {
         return res.status(422).json({ message: 'Resume PDF does not contain extractable text' });
       }
+      if (extractErr.code === 'DOWNLOAD_TIMEOUT') {
+        return res.status(504).json({ message: 'Timed out retrieving resume from storage' });
+      }
+      if (extractErr.code === 'TEXT_TOO_LONG') {
+        return res.status(400).json({ message: 'Resume text exceeds maximum allowed length of 50,000 characters' });
+      }
       if (extractErr.code === 'CORRUPTED_PDF' || extractErr.code === 'FILE_READ_ERROR') {
         return res.status(400).json({ message: 'Failed to extract text from resume PDF' });
       }
-      return res.status(400).json({ message: extractErr.message || 'Error processing resume file' });
+      return res.status(400).json({ message: 'Error processing resume file' });
     }
 
     // Call AI Service
@@ -213,11 +249,7 @@ const analyzeResume = async (req, res) => {
         jobDescription: resume.jobDescription,
       });
     } catch (aiErr) {
-      console.error('AI analysis error:', {
-        code: aiErr.code,
-        message: aiErr.message,
-        originalMessage: aiErr.originalMessage,
-      });
+      console.error('[AI Service] Analysis failure with code:', aiErr.code || 'UNKNOWN');
 
       const statusCode = aiErr.statusCode || 502;
       return res.status(statusCode).json({
@@ -236,8 +268,13 @@ const analyzeResume = async (req, res) => {
       feedback: resume.feedback,
     });
   } catch (error) {
-    console.error('Analyze resume error:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Resume Error] Analyze resume failure');
     return res.status(500).json({ message: 'Server error analyzing resume' });
+  } finally {
+    activeAnalyses.delete(lockKey);
   }
 };
 
@@ -248,4 +285,5 @@ module.exports = {
   deleteResume,
   deleteAllResumes,
   analyzeResume,
+  _activeAnalyses: activeAnalyses,
 };

@@ -1,5 +1,8 @@
+const path = require('path');
+module.paths.push(path.resolve(__dirname, '../server/node_modules'));
+
 const assert = require('assert');
-const aiService = require('./services/aiService');
+const aiService = require('../server/services/aiService');
 
 const sampleFeedback = {
   overallScore: 85,

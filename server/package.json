@@ -5,7 +5,16 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node ../tests/test_env.js && node ../tests/test_retry.js && node ../tests/test_error_handling.js && node ../tests/test_validation.js && node ../tests/test_rate_limit.js && node ../tests/test_concurrency_guard.js && node ../tests/test_pdf_safeguards.js",
+    "test:env": "node ../tests/test_env.js",
+    "test:retry": "node ../tests/test_retry.js",
+    "test:error": "node ../tests/test_error_handling.js",
+    "test:validation": "node ../tests/test_validation.js",
+    "test:ratelimit": "node ../tests/test_rate_limit.js",
+    "test:concurrency": "node ../tests/test_concurrency_guard.js",
+    "test:pdf": "node ../tests/test_pdf_safeguards.js",
+    "test:phase5": "node ../tests/test_phase5.js"
   },
   "keywords": [],
   "author": "",
@@ -18,10 +27,13 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.5",
     "multer": "^2.3.0",
-    "pdf-parse": "^2.4.5"
+    "pdf-parse": "^2.4.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

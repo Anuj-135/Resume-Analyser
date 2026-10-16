@@ -25,7 +25,9 @@ const extractTextFromPdf = async (resumePublicId) => {
   // Fetch file buffer from Cloudinary into memory
   let buffer;
   try {
-    const response = await fetch(signedUrl);
+    const response = await fetch(signedUrl, {
+      signal: AbortSignal.timeout(10000),
+    });
     if (!response.ok) {
       const err = new Error('Stored resume file not found on server');
       err.code = 'FILE_NOT_FOUND';
@@ -37,9 +39,15 @@ const extractTextFromPdf = async (resumePublicId) => {
     if (fetchErr.code === 'FILE_NOT_FOUND') {
       throw fetchErr;
     }
+    if (fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError') {
+      const err = new Error('Timed out downloading resume from storage');
+      err.code = 'DOWNLOAD_TIMEOUT';
+      err.details = 'Storage download timeout';
+      throw err;
+    }
     const err = new Error('Unable to read resume file from storage');
     err.code = 'FILE_READ_ERROR';
-    err.details = fetchErr.message;
+    err.details = 'Storage read error';
     throw err;
   }
 
@@ -69,6 +77,13 @@ const extractTextFromPdf = async (resumePublicId) => {
   if (!cleanedText) {
     const err = new Error('Resume PDF does not contain extractable text');
     err.code = 'EMPTY_TEXT';
+    throw err;
+  }
+
+  const MAX_RESUME_TEXT_LENGTH = 50000;
+  if (cleanedText.length > MAX_RESUME_TEXT_LENGTH) {
+    const err = new Error('Resume text exceeds maximum allowed length of 50,000 characters');
+    err.code = 'TEXT_TOO_LONG';
     throw err;
   }
 

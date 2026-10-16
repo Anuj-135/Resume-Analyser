@@ -6,7 +6,7 @@ const { calculateProfileAnalytics } = require('../services/profileAnalyticsServi
  * Controller to fetch profile and resume analytics for the authenticated user.
  * Strictly uses req.userId from the auth middleware token.
  */
-const getProfileAnalytics = async (req, res) => {
+const getProfileAnalytics = async (req, res, next) => {
   try {
     // 1. Fetch user account information (never include password or secrets)
     const user = await User.findById(req.userId).select('name email createdAt');
@@ -22,7 +22,10 @@ const getProfileAnalytics = async (req, res) => {
 
     return res.status(200).json(payload);
   } catch (error) {
-    console.error('Error fetching profile analytics:', error);
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    console.error('[Profile Error] Profile analytics failure');
     return res.status(500).json({ message: 'Server error retrieving profile analytics' });
   }
 };

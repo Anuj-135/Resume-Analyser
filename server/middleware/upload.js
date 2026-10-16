@@ -40,7 +40,7 @@ const uploadResumeFile = (req, res, next) => {
       if (err.code === 'LIMIT_UNEXPECTED_FILE') {
         return res.status(400).json({ message: 'Unexpected field in form upload' });
       }
-      return res.status(400).json({ message: err.message || 'File upload error' });
+      return res.status(400).json({ message: 'File upload error' });
     }
     next();
   });

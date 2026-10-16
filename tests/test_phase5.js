@@ -1,25 +1,27 @@
 const path = require('path');
+// Ensure dependencies installed in server/node_modules are resolvable when run from tests/
+module.paths.push(path.resolve(__dirname, '../server/node_modules'));
 const fs = require('fs');
 const http = require('http');
 const mongoose = require('mongoose');
-require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../server/.env') });
 
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const authRoutes = require('./routes/authRoutes');
-const resumeRoutes = require('./routes/resumeRoutes');
-const pdfService = require('./services/pdfService');
-const aiService = require('./services/aiService');
-const User = require('./models/User');
-const Resume = require('./models/Resume');
+const authRoutes = require('../server/routes/authRoutes');
+const resumeRoutes = require('../server/routes/resumeRoutes');
+const pdfService = require('../server/services/pdfService');
+const aiService = require('../server/services/aiService');
+const User = require('../server/models/User');
+const Resume = require('../server/models/Resume');
 
 // Setup test app
 const app = express();
 app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
 app.use(cookieParser());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../server/uploads')));
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Server is healthy' });
@@ -185,7 +187,7 @@ const runTestSuite = async () => {
   baseUrl = `http://localhost:${TEST_PORT}`;
   console.log(`Test server running on ${baseUrl}\n`);
 
-  const uploadsDir = path.join(__dirname, 'uploads');
+  const uploadsDir = path.join(__dirname, '../server/uploads');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
@@ -205,7 +207,7 @@ const runTestSuite = async () => {
     // The defense is neutralization (basename stripping) rather than error throwing.
     let traversalNeutralized = false;
     try {
-      const UPLOAD_DIR = path.resolve(__dirname, 'uploads');
+      const UPLOAD_DIR = path.resolve(__dirname, '../server/uploads');
       const resolved = pdfService.resolveSafePath('../../etc/passwd');
       // Resolved path must be inside UPLOAD_DIR; traversal is silently neutralized
       traversalNeutralized = resolved.startsWith(UPLOAD_DIR);
