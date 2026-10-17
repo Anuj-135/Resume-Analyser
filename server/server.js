@@ -34,7 +34,15 @@ app.use(
 // Middleware
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true
+  credentials: true,
+  exposedHeaders: [
+    'Retry-After',
+    'RateLimit-Limit',
+    'RateLimit-Remaining',
+    'RateLimit-Reset',
+    'RateLimit-Policy',
+    'RateLimit',
+  ],
 }));
 app.use(cookieParser());
 app.use(express.json());

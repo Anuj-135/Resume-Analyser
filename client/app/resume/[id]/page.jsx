@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useResumeStore } from "@/lib/store";
+import { isAnalysisComplete } from "@/lib/utils";
 import Summary from "@/components/Summary";
 import ATS from "@/components/ATS";
 import Details from "@/components/Details";
@@ -13,10 +14,15 @@ const Resume = () => {
     const { id } = useParams();
     const router = useRouter();
     const getResumeById = useResumeStore((state) => state.getResumeById);
+    const analyzeExistingResume = useResumeStore((state) => state.analyzeExistingResume);
+    const isAnalyzingResume = useResumeStore((state) => state.isAnalyzingResume);
+    const rateLimitInfo = useResumeStore((state) => state.rateLimitInfo);
+
     const [imageUrl, setImageUrl] = useState('');
     const [resumeUrl, setResumeUrl] = useState('');
     const [feedback, setFeedback] = useState(null);
     const [loadError, setLoadError] = useState('');
+    const [actionError, setActionError] = useState('');
 
     useEffect(() => {
         const loadResume = async () => {
@@ -37,7 +43,6 @@ const Resume = () => {
                         setResumeUrl(`${serverBase}${resumeData.resumePath}`);
                     }
 
-
                     if (resumeData.imagePath) {
                         setImageUrl(resumeData.imagePath);
                     }
@@ -53,6 +58,21 @@ const Resume = () => {
 
         loadResume();
     }, [id, getResumeById]);
+
+    const handleRunAnalysis = async () => {
+        if (!id || isAnalyzingResume) return;
+        setActionError('');
+
+        const result = await analyzeExistingResume(id);
+        if (result.success && result.feedback) {
+            setFeedback(result.feedback);
+        } else if (result.error) {
+            setActionError(result.error);
+        }
+    };
+
+    const hasCompletedAnalysis = isAnalysisComplete(feedback);
+    const displayError = actionError || (rateLimitInfo?.isRateLimited ? rateLimitInfo.message : '');
 
     return (
         <main className="!pt-0 bg-cover">
@@ -91,7 +111,7 @@ const Resume = () => {
                 </section>
                 <section className="feedback-section">
                     <h2 className="text-4xl !text-black font-bold">Resume Review</h2>
-                    {feedback ? (
+                    {hasCompletedAnalysis ? (
                         <div className="flex flex-col gap-8 animate-in fade-in duration-1000">
                             <Summary feedback={feedback} />
                             <ATS score={feedback?.ATS?.score || feedback?.ats?.score || 0} suggestions={feedback?.ATS?.tips || feedback?.ats?.tips || []} />
@@ -105,8 +125,38 @@ const Resume = () => {
                                 Upload Resume
                             </Link>
                         </div>
+                    ) : isAnalyzingResume ? (
+                        <div className="flex flex-col items-center gap-4 py-12">
+                            <img src="/images/resume-scan-2.gif" className="w-full max-w-md" alt="scanning" />
+                            <p className="text-gray-600 font-medium animate-pulse">Analyzing resume with AI...</p>
+                        </div>
                     ) : (
-                        <img src="/images/resume-scan-2.gif" className="w-full" alt="scanning" />
+                        <div className="p-8 bg-white/90 backdrop-blur-md border border-gray-200 rounded-2xl text-center flex flex-col items-center gap-4 max-w-xl mx-auto shadow-sm">
+                            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900">Analysis Incomplete</h3>
+                            <p className="text-sm text-gray-600">
+                                This resume document is safely stored on the server, but AI analysis has not been run or was interrupted.
+                            </p>
+
+                            {displayError && (
+                                <div className="w-full p-4 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl text-center">
+                                    {displayError}
+                                </div>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={handleRunAnalysis}
+                                disabled={isAnalyzingResume}
+                                className="primary-button disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+                            >
+                                {isAnalyzingResume ? "Analyzing..." : "Run AI Analysis"}
+                            </button>
+                        </div>
                     )}
                 </section>
             </div>
@@ -121,4 +171,3 @@ export default function ResumePage() {
         </ProtectedRoute>
     );
 }
-

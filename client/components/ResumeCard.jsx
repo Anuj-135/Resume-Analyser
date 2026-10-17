@@ -1,10 +1,12 @@
 import Link from "next/link";
 import ScoreCircle from "./ScoreCircle";
+import { isAnalysisComplete } from "@/lib/utils";
 
 const ResumeCard = ({ resume, onDelete, isDeleting }) => {
     const resumeId = resume._id || resume.id;
     const { companyName, jobTitle, feedback, imagePath } = resume;
-    const score = feedback?.overallScore ?? 0;
+    const hasCompletedAnalysis = isAnalysisComplete(feedback);
+    const score = hasCompletedAnalysis ? (feedback?.overallScore ?? 0) : null;
 
     return (
         <Link 
@@ -42,7 +44,14 @@ const ResumeCard = ({ resume, onDelete, isDeleting }) => {
                     </h3>
                 </div>
                 <div className="flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
-                    <ScoreCircle score={score} />
+                    {hasCompletedAnalysis ? (
+                        <ScoreCircle score={score} />
+                    ) : (
+                        <div className="w-[100px] h-[100px] rounded-full border-2 border-dashed border-amber-300 bg-amber-50/50 flex flex-col items-center justify-center p-2 text-center">
+                            <span className="text-[11px] font-semibold text-amber-700 leading-tight">Pending</span>
+                            <span className="text-[9px] text-amber-600">Analysis</span>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -58,12 +67,14 @@ const ResumeCard = ({ resume, onDelete, isDeleting }) => {
                     <div className="flex flex-col items-center justify-center p-6 text-center text-gray-400 group-hover:text-indigo-500 transition-colors">
                         <img src="/images/pdf.png" alt="PDF icon" className="w-16 h-16 mb-2 opacity-80 group-hover:opacity-100 transition-opacity" />
                         <span className="text-xs font-semibold text-gray-500">PDF Application Document</span>
-                        <span className="text-[11px] text-gray-400 mt-0.5">Click to view analysis</span>
+                        <span className="text-[11px] text-gray-400 mt-0.5">
+                            {hasCompletedAnalysis ? "Click to view analysis" : "Click to run or retry analysis"}
+                        </span>
                     </div>
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
                     <span className="text-white text-sm font-semibold flex items-center gap-1.5">
-                        View Detailed Analysis
+                        {hasCompletedAnalysis ? "View Detailed Analysis" : "Run AI Analysis"}
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                         </svg>
@@ -73,16 +84,33 @@ const ResumeCard = ({ resume, onDelete, isDeleting }) => {
 
             {/* Card Footer */}
             <div className="flex items-center justify-between pt-3 border-t border-gray-100 text-xs font-medium text-gray-500 group-hover:text-indigo-600 transition-colors">
-                <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    AI Analysis Ready
-                </span>
-                <span className="flex items-center gap-1 font-semibold text-indigo-600">
-                    View Report
-                    <svg className="w-3.5 h-3.5 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                </span>
+                {hasCompletedAnalysis ? (
+                    <>
+                        <span className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            AI Analysis Ready
+                        </span>
+                        <span className="flex items-center gap-1 font-semibold text-indigo-600">
+                            View Report
+                            <svg className="w-3.5 h-3.5 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </span>
+                    </>
+                ) : (
+                    <>
+                        <span className="flex items-center gap-1 text-amber-600 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                            Analysis Pending
+                        </span>
+                        <span className="flex items-center gap-1 font-semibold text-amber-600">
+                            Run Analysis
+                            <svg className="w-3.5 h-3.5 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </span>
+                    </>
+                )}
             </div>
         </Link>
     );
