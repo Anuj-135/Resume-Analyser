@@ -23,17 +23,29 @@ let mockGeminiAnalyzeCalls = 0;
 let mockResumeFindOneCalls = 0;
 let mockUserFindOneCalls = 0;
 let mockUserCreateCalls = 0;
+let mockCloudinaryUploadCalls = 0;
+let mockMulterCalls = 0;
 
 const resetSpies = () => {
   mockGeminiAnalyzeCalls = 0;
   mockResumeFindOneCalls = 0;
   mockUserFindOneCalls = 0;
   mockUserCreateCalls = 0;
+  mockCloudinaryUploadCalls = 0;
+  mockMulterCalls = 0;
 };
 
 // Wire default spy implementations
 cloudinaryService.generateSignedUrl = (publicId) => {
   return `https://res.cloudinary.com/mock/image/upload/signed/${publicId}.pdf`;
+};
+
+cloudinaryService.uploadPdfBuffer = async (buffer) => {
+  mockCloudinaryUploadCalls++;
+  return {
+    public_id: 'mock_cloudinary_public_id',
+    secure_url: 'https://res.cloudinary.com/mock/image/upload/mock_cloudinary_public_id.pdf',
+  };
 };
 
 pdfService.extractTextFromPdf = async (publicId) => {
@@ -71,6 +83,12 @@ Resume.findOne = async (query) => {
   };
 };
 
+Resume.create = async (doc) => ({
+  _id: '507f191e810c19729de860ea',
+  ...doc,
+  createdAt: new Date(),
+});
+
 // 2. Import Production Routers, Middleware & Limiter module
 const authRoutes = require('../server/routes/authRoutes');
 const resumeRoutes = require('../server/routes/resumeRoutes');
@@ -80,8 +98,26 @@ const {
   loginLimiter,
   registerLimiter,
   analysisLimiter,
+  globalAnalysisLimiter,
+  uploadIpLimiter,
+  uploadUserLimiter,
 } = require('../server/middleware/rateLimiter');
 const { ipKeyGenerator } = require('express-rate-limit');
+
+// Spy on Multer upload middleware layer inside resumeRoutes
+const uploadRouteLayer = resumeRoutes.stack.find((layer) => layer.route && layer.route.path === '/');
+if (uploadRouteLayer) {
+  const multerLayer = uploadRouteLayer.route.stack.find(
+    (layer) => layer.handle && layer.handle.name === 'uploadResumeFile'
+  );
+  if (multerLayer) {
+    const origMulterHandler = multerLayer.handle;
+    multerLayer.handle = (req, res, next) => {
+      mockMulterCalls++;
+      return origMulterHandler(req, res, next);
+    };
+  }
+}
 
 // Helper to generate valid JWT auth cookies
 const generateTestToken = (userId = '507f1f77bcf86cd799439011') => {
@@ -173,6 +209,74 @@ const makeJsonRequest = (server, options = {}, body = null) => {
     if (data !== null) {
       req.write(data);
     }
+    req.end();
+  });
+};
+
+/**
+ * Issues a multipart/form-data HTTP request to the test server.
+ */
+const makeMultipartRequest = (server, options = {}, fields = {}, file = null) => {
+  return new Promise((resolve, reject) => {
+    const address = server.address();
+    const boundary = '----WebKitFormBoundaryTest' + Math.random().toString(36).substring(2);
+    const chunks = [];
+
+    for (const [key, value] of Object.entries(fields)) {
+      chunks.push(
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`)
+      );
+    }
+
+    if (file) {
+      chunks.push(
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${file.fieldname || 'resume'}"; filename="${file.filename || 'resume.pdf'}"\r\nContent-Type: ${file.mimetype || 'application/pdf'}\r\n\r\n`
+        )
+      );
+      chunks.push(file.buffer);
+      chunks.push(Buffer.from('\r\n'));
+    }
+
+    chunks.push(Buffer.from(`--${boundary}--\r\n`));
+    const payload = Buffer.concat(chunks);
+
+    const headers = {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      'Content-Length': payload.length,
+      ...(options.headers || {}),
+    };
+
+    const req = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: address.port,
+        path: options.path || '/api/resumes',
+        method: options.method || 'POST',
+        headers,
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk) => {
+          raw += chunk;
+        });
+        res.on('end', () => {
+          let json = null;
+          try {
+            json = JSON.parse(raw);
+          } catch (_) {}
+          resolve({
+            statusCode: res.statusCode,
+            headers: res.headers,
+            body: raw,
+            json,
+          });
+        });
+      }
+    );
+
+    req.on('error', reject);
+    req.write(payload);
     req.end();
   });
 };
@@ -497,6 +601,9 @@ const makeJsonRequest = (server, options = {}, body = null) => {
       assert(typeof loginLimiter === 'function');
       assert(typeof registerLimiter === 'function');
       assert(typeof analysisLimiter === 'function');
+      assert(typeof globalAnalysisLimiter === 'function');
+      assert(typeof uploadIpLimiter === 'function');
+      assert(typeof uploadUserLimiter === 'function');
     });
 
     // Test 17: No secret credentials or database strings leaked in headers or error JSON
@@ -510,6 +617,389 @@ const makeJsonRequest = (server, options = {}, body = null) => {
       assert(!stringified.includes('mongodb'), 'Must not leak mongodb strings');
       assert(!stringified.includes('SECRET'), 'Must not leak SECRET strings');
       assert(!stringified.includes('Cloudinary'), 'Must not leak Cloudinary strings');
+    });
+
+    // -----------------------------------------------------------------------
+    // Section 4: Dual-Layer Resume Upload Rate Limiting (R-2)
+    // -----------------------------------------------------------------------
+
+    const uploadUser1Id = '507f1f77bcf86cd799439101';
+    const uploadUser1Token = generateTestToken(uploadUser1Id);
+
+    // Test 18 (Requirement 1): Upload user-limit normal flow
+    await runTest('Test 18 — POST /api/resumes allows up to 10 uploads per 15 minutes for authenticated user', async () => {
+      uploadUserLimiter.resetKey(uploadUser1Id);
+      uploadIpLimiter.resetKey('127.0.0.1');
+
+      for (let i = 1; i <= 10; i++) {
+        const res = await makeJsonRequest(
+          server,
+          {
+            path: '/api/resumes',
+            method: 'POST',
+            headers: { Cookie: `token=${uploadUser1Token}` },
+          },
+          {
+            companyName: `Company ${i}`,
+            jobTitle: `Software Engineer ${i}`,
+          }
+        );
+        assert.strictEqual(res.statusCode, 201, `Upload ${i} should succeed with HTTP 201`);
+        assert.strictEqual(res.json?.message, 'Resume created successfully');
+      }
+    });
+
+    // Test 19 (Requirement 2): Upload user-limit exhaustion
+    await runTest('Test 19 — POST /api/resumes returns HTTP 429 when user upload quota (10) is exhausted', async () => {
+      const res = await makeJsonRequest(
+        server,
+        {
+          path: '/api/resumes',
+          method: 'POST',
+          headers: { Cookie: `token=${uploadUser1Token}` },
+        },
+        {
+          companyName: 'Excess Company',
+          jobTitle: 'Excess Engineer',
+        }
+      );
+      assert.strictEqual(res.statusCode, 429, 'Expected 11th request to return HTTP 429');
+      assert.strictEqual(res.json?.message, 'Too many resume uploads. Please try again later.');
+      assert(res.headers['retry-after'], 'Expected Retry-After header on 429');
+    });
+
+    // Test 20 (Requirement 3): Multer/downstream bypass when an upload limiter rejects
+    await runTest('Test 20 — Rate-limited upload bypasses Multer buffer allocation and Cloudinary storage', async () => {
+      resetSpies();
+      const mockPdfBuffer = Buffer.from('%PDF-1.4 Mock PDF file binary data stream');
+
+      const res = await makeMultipartRequest(
+        server,
+        {
+          path: '/api/resumes',
+          method: 'POST',
+          headers: { Cookie: `token=${uploadUser1Token}` },
+        },
+        { companyName: 'Blocked Company', jobTitle: 'Blocked Engineer' },
+        { fieldname: 'resume', filename: 'resume.pdf', mimetype: 'application/pdf', buffer: mockPdfBuffer }
+      );
+
+      assert.strictEqual(res.statusCode, 429);
+      assert.strictEqual(mockMulterCalls, 0, 'Multer middleware must not be invoked when rate limited');
+      assert.strictEqual(mockCloudinaryUploadCalls, 0, 'Cloudinary upload service must not be invoked when rate limited');
+    });
+
+    // Test 21 (Requirement 4): Independent user quotas
+    await runTest('Test 21 — Independent user retains separate upload quota and succeeds from the same IP', async () => {
+      const uploadUser2Id = '507f1f77bcf86cd799439102';
+      const uploadUser2Token = generateTestToken(uploadUser2Id);
+      uploadUserLimiter.resetKey(uploadUser2Id);
+
+      const res = await makeJsonRequest(
+        server,
+        {
+          path: '/api/resumes',
+          method: 'POST',
+          headers: { Cookie: `token=${uploadUser2Token}` },
+        },
+        {
+          companyName: 'User 2 Company',
+          jobTitle: 'User 2 Engineer',
+        }
+      );
+      assert.strictEqual(res.statusCode, 201, 'User 2 must succeed with independent user quota');
+      assert.strictEqual(res.json?.message, 'Resume created successfully');
+    });
+
+    // Test 22 (Requirement 5): IP-limit exhaustion across multiple accounts
+    await runTest('Test 22 — POST /api/resumes IP limiter caps total uploads at 25 requests across multiple accounts', async () => {
+      uploadIpLimiter.resetKey('127.0.0.1');
+
+      // Account A: 10 uploads (IP 1..10)
+      const tokenA = generateTestToken('507f1f77bcf86cd799439111');
+      uploadUserLimiter.resetKey('507f1f77bcf86cd799439111');
+      for (let i = 1; i <= 10; i++) {
+        const res = await makeJsonRequest(
+          server,
+          { path: '/api/resumes', method: 'POST', headers: { Cookie: `token=${tokenA}` } },
+          { companyName: `A_${i}`, jobTitle: 'Dev' }
+        );
+        assert.strictEqual(res.statusCode, 201);
+      }
+
+      // Account B: 10 uploads (IP 11..20)
+      const tokenB = generateTestToken('507f1f77bcf86cd799439112');
+      uploadUserLimiter.resetKey('507f1f77bcf86cd799439112');
+      for (let i = 1; i <= 10; i++) {
+        const res = await makeJsonRequest(
+          server,
+          { path: '/api/resumes', method: 'POST', headers: { Cookie: `token=${tokenB}` } },
+          { companyName: `B_${i}`, jobTitle: 'Dev' }
+        );
+        assert.strictEqual(res.statusCode, 201);
+      }
+
+      // Account C: 5 uploads (IP 21..25)
+      const tokenC = generateTestToken('507f1f77bcf86cd799439113');
+      uploadUserLimiter.resetKey('507f1f77bcf86cd799439113');
+      for (let i = 1; i <= 5; i++) {
+        const res = await makeJsonRequest(
+          server,
+          { path: '/api/resumes', method: 'POST', headers: { Cookie: `token=${tokenC}` } },
+          { companyName: `C_${i}`, jobTitle: 'Dev' }
+        );
+        assert.strictEqual(res.statusCode, 201);
+      }
+
+      // Account D (brand new user with 0 uploads) attempts 26th upload from same IP
+      const tokenD = generateTestToken('507f1f77bcf86cd799439114');
+      uploadUserLimiter.resetKey('507f1f77bcf86cd799439114');
+
+      const excessIpRes = await makeJsonRequest(
+        server,
+        { path: '/api/resumes', method: 'POST', headers: { Cookie: `token=${tokenD}` } },
+        { companyName: 'D_1', jobTitle: 'Dev' }
+      );
+      assert.strictEqual(excessIpRes.statusCode, 429, '26th upload from same IP must hit IP rate limit');
+      assert.strictEqual(
+        excessIpRes.json?.message,
+        'Too many resume uploads from this IP address. Please try again later.'
+      );
+      assert(excessIpRes.headers['retry-after'], 'Expected Retry-After header on IP rate limit');
+    });
+
+    // Test 23 (Requirement 6): Spoofed forwarding-header behavior under the tested proxy configuration
+    await runTest('Test 23 — Spoofed X-Forwarded-For header does not bypass IP rate limit when proxy is untrusted', async () => {
+      // Under test environment, trust proxy is false. Express resolves req.ip from socket (127.0.0.1)
+      const tokenE = generateTestToken('507f1f77bcf86cd799439115');
+      uploadUserLimiter.resetKey('507f1f77bcf86cd799439115');
+
+      const spoofedRes = await makeJsonRequest(
+        server,
+        {
+          path: '/api/resumes',
+          method: 'POST',
+          headers: {
+            Cookie: `token=${tokenE}`,
+            'X-Forwarded-For': '203.0.113.195',
+            'X-Real-IP': '203.0.113.195',
+          },
+        },
+        { companyName: 'Spoof Corp', jobTitle: 'Dev' }
+      );
+
+      assert.strictEqual(spoofedRes.statusCode, 429, 'Spoofed header must not bypass IP rate limit');
+      assert.strictEqual(
+        spoofedRes.json?.message,
+        'Too many resume uploads from this IP address. Please try again later.'
+      );
+      assert.strictEqual(mockMulterCalls, 0, 'Multer must not be invoked for rate-limited request with spoofed IP');
+    });
+
+    // -----------------------------------------------------------------------
+    // Section 5: Global AI Analysis Limiting & Quota Precedence (R-2)
+    // -----------------------------------------------------------------------
+
+    // Test 24 (Requirement 7): Global analysis-limit exhaustion across users
+    await runTest('Test 24 — Global analysis limiter enforces 50 req/hr cap across multiple users', async () => {
+      globalAnalysisLimiter.resetKey('global_ai_analysis_bucket');
+
+      // Distribute 50 requests across 10 users (5 each, matching per-user limit)
+      for (let u = 1; u <= 10; u++) {
+        const uId = `507f1f77bcf86cd7994391${u.toString().padStart(2, '0')}`;
+        const uToken = generateTestToken(uId);
+        analysisLimiter.resetKey(uId);
+
+        for (let r = 1; r <= 5; r++) {
+          const res = await makeJsonRequest(
+            server,
+            {
+              path: `/api/resumes/${validResumeId}/analyze`,
+              method: 'POST',
+              headers: { Cookie: `token=${uToken}` },
+            }
+          );
+          assert.strictEqual(res.statusCode, 200, `Global request user ${u} req ${r} should succeed`);
+        }
+      }
+      assert.strictEqual(mockGeminiAnalyzeCalls, 50, 'Exactly 50 Gemini calls executed');
+
+      // User 11 with 0 prior requests attempts 51st global analysis
+      const user11Id = '507f1f77bcf86cd799439199';
+      const user11Token = generateTestToken(user11Id);
+      analysisLimiter.resetKey(user11Id);
+
+      const excessGlobalRes = await makeJsonRequest(
+        server,
+        {
+          path: `/api/resumes/${validResumeId}/analyze`,
+          method: 'POST',
+          headers: { Cookie: `token=${user11Token}` },
+        }
+      );
+      assert.strictEqual(excessGlobalRes.statusCode, 429, '51st global request must return HTTP 429');
+      assert.strictEqual(
+        excessGlobalRes.json?.message,
+        'System-wide AI analysis capacity reached. Please try again later.'
+      );
+      assert.strictEqual(mockGeminiAnalyzeCalls, 50, 'Gemini must not be called when global quota is exhausted');
+      assert(excessGlobalRes.headers['retry-after'], 'Expected Retry-After header on global 429');
+    });
+
+    // Test 25 (Requirement 8): Existing per-user analysis-limit preservation
+    await runTest('Test 25 — Per-user analysis limit (5 req/hr) is enforced even when global capacity is available', async () => {
+      globalAnalysisLimiter.resetKey('global_ai_analysis_bucket');
+
+      const singleUserId = '507f1f77bcf86cd799439201';
+      const singleUserToken = generateTestToken(singleUserId);
+      analysisLimiter.resetKey(singleUserId);
+
+      // Send 5 valid requests
+      for (let i = 1; i <= 5; i++) {
+        const res = await makeJsonRequest(
+          server,
+          {
+            path: `/api/resumes/${validResumeId}/analyze`,
+            method: 'POST',
+            headers: { Cookie: `token=${singleUserToken}` },
+          }
+        );
+        assert.strictEqual(res.statusCode, 200);
+      }
+
+      // 6th request from same user should hit user limiter (not global limiter)
+      const res6 = await makeJsonRequest(
+        server,
+        {
+          path: `/api/resumes/${validResumeId}/analyze`,
+          method: 'POST',
+          headers: { Cookie: `token=${singleUserToken}` },
+        }
+      );
+      assert.strictEqual(res6.statusCode, 429);
+      assert.strictEqual(res6.json?.message, 'Too many resume analysis requests. Please try again later.');
+    });
+
+    // Test 26 (Requirement 9): Invalid resume ID rejected before consuming global quota
+    await runTest('Test 26 — Invalid resume ID format is rejected by validate middleware before consuming global quota', async () => {
+      globalAnalysisLimiter.resetKey('global_ai_analysis_bucket');
+
+      const testUserToken = generateTestToken('507f1f77bcf86cd799439202');
+      analysisLimiter.resetKey('507f1f77bcf86cd799439202');
+
+      // Send 10 invalid-ID requests
+      for (let i = 1; i <= 10; i++) {
+        const res = await makeJsonRequest(
+          server,
+          {
+            path: '/api/resumes/not-a-valid-hex-id/analyze',
+            method: 'POST',
+            headers: { Cookie: `token=${testUserToken}` },
+          }
+        );
+        assert.strictEqual(res.statusCode, 400);
+        assert.strictEqual(res.json?.message, 'Invalid resume ID format');
+      }
+
+      // 50 valid requests across 10 users still succeed fully because invalid IDs did not consume global quota
+      for (let u = 1; u <= 10; u++) {
+        const uId = `507f1f77bcf86cd7994393${u.toString().padStart(2, '0')}`;
+        const uToken = generateTestToken(uId);
+        analysisLimiter.resetKey(uId);
+
+        for (let r = 1; r <= 5; r++) {
+          const res = await makeJsonRequest(
+            server,
+            {
+              path: `/api/resumes/${validResumeId}/analyze`,
+              method: 'POST',
+              headers: { Cookie: `token=${uToken}` },
+            }
+          );
+          assert.strictEqual(res.statusCode, 200);
+        }
+      }
+      assert.strictEqual(mockGeminiAnalyzeCalls, 50, 'All 50 global slots were preserved and used');
+    });
+
+    // Test 27 (Requirement 10): Unauthenticated upload rejected before consuming upload quota
+    await runTest('Test 27 — Unauthenticated upload requests are rejected by auth middleware before consuming upload quotas', async () => {
+      uploadIpLimiter.resetKey('127.0.0.1');
+
+      // Send 30 unauthenticated requests (exceeding the 25 IP limit)
+      for (let i = 1; i <= 30; i++) {
+        const unauthRes = await makeJsonRequest(server, {
+          path: '/api/resumes',
+          method: 'POST',
+        }, { companyName: 'Acme', jobTitle: 'Dev' });
+        assert.strictEqual(unauthRes.statusCode, 401);
+        assert.strictEqual(unauthRes.json?.message, 'Unauthorized: No token provided');
+      }
+
+      // An authenticated user on this IP should still have full quota available
+      const authedToken = generateTestToken('507f1f77bcf86cd799439401');
+      uploadUserLimiter.resetKey('507f1f77bcf86cd799439401');
+
+      const authedRes = await makeJsonRequest(
+        server,
+        {
+          path: '/api/resumes',
+          method: 'POST',
+          headers: { Cookie: `token=${authedToken}` },
+        },
+        { companyName: 'Authed Acme', jobTitle: 'Lead Dev' }
+      );
+      assert.strictEqual(authedRes.statusCode, 201, 'Authenticated upload must succeed because unauthenticated requests did not consume IP quota');
+      assert.strictEqual(authedRes.json?.message, 'Resume created successfully');
+    });
+
+    // Test 28 (Requirement 11): Rate-limit headers, reset behavior, and sensitive-data non-disclosure
+    await runTest('Test 28 — Rate-limit responses emit standard draft-7 headers, integer retry-after, support resets, and disclose zero secrets', async () => {
+      const tokenBlocked = generateTestToken('507f1f77bcf86cd799439501');
+      uploadUserLimiter.resetKey('507f1f77bcf86cd799439501');
+      uploadIpLimiter.resetKey('127.0.0.1');
+
+      // Exhaust user limit (10 requests)
+      for (let i = 1; i <= 10; i++) {
+        await makeJsonRequest(
+          server,
+          { path: '/api/resumes', method: 'POST', headers: { Cookie: `token=${tokenBlocked}` } },
+          { companyName: 'Acme', jobTitle: 'Dev' }
+        );
+      }
+
+      const res429 = await makeJsonRequest(
+        server,
+        { path: '/api/resumes', method: 'POST', headers: { Cookie: `token=${tokenBlocked}` } },
+        { companyName: 'Acme', jobTitle: 'Dev' }
+      );
+
+      assert.strictEqual(res429.statusCode, 429);
+      // Standard draft-7 RateLimit header
+      assert(res429.headers['ratelimit'], 'Expected ratelimit header on 429');
+      assert(/limit=\d+,\s*remaining=\d+,\s*reset=\d+/.test(res429.headers['ratelimit']), 'Draft-7 format matches');
+      // Retry-After header as integer string
+      assert(res429.headers['retry-after'], 'Expected retry-after header');
+      assert(/^\d+$/.test(res429.headers['retry-after']), 'retry-after must be a numeric integer string');
+      // Legacy headers absent
+      assert.strictEqual(res429.headers['x-ratelimit-limit'], undefined);
+      assert.strictEqual(res429.headers['x-ratelimit-remaining'], undefined);
+
+      // Sensitive data non-disclosure
+      const fullResponseString = JSON.stringify(res429.headers) + ' ' + res429.body;
+      assert(!fullResponseString.includes('mongodb'), 'Must not disclose MongoDB URI');
+      assert(!fullResponseString.includes('JWT_SECRET'), 'Must not disclose JWT secrets');
+      assert(!fullResponseString.includes('CLOUDINARY'), 'Must not disclose Cloudinary secrets');
+      assert(!fullResponseString.includes('cookie'), 'Must not disclose cookies in body');
+
+      // Verify resetKey resets state immediately without waiting 15 minutes
+      uploadUserLimiter.resetKey('507f1f77bcf86cd799439501');
+      const resetRes = await makeJsonRequest(
+        server,
+        { path: '/api/resumes', method: 'POST', headers: { Cookie: `token=${tokenBlocked}` } },
+        { companyName: 'Reset Acme', jobTitle: 'Dev' }
+      );
+      assert.strictEqual(resetRes.statusCode, 201, 'Request immediately succeeds after resetKey');
     });
 
   } finally {

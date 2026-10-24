@@ -11,6 +11,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
+const { csrfProtection } = require('./middleware/csrf');
 
 const app = express();
 
@@ -35,6 +36,11 @@ app.use(
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true,
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+  ],
   exposedHeaders: [
     'Retry-After',
     'RateLimit-Limit',
@@ -46,6 +52,7 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(express.json());
+app.use(csrfProtection);
 
 
 // Routes

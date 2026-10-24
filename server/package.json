@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "test": "node ../tests/test_env.js && node ../tests/test_retry.js && node ../tests/test_error_handling.js && node ../tests/test_validation.js && node ../tests/test_rate_limit.js && node ../tests/test_concurrency_guard.js && node ../tests/test_pdf_safeguards.js && node ../tests/test_http_429_retry.js",
+    "test": "node ../tests/test_env.js && node ../tests/test_retry.js && node ../tests/test_error_handling.js && node ../tests/test_validation.js && node ../tests/test_rate_limit.js && node ../tests/test_concurrency_guard.js && node ../tests/test_pdf_safeguards.js && node ../tests/test_http_429_retry.js && node ../tests/test_csrf.js && node ../tests/test_authorization.js",
     "test:env": "node ../tests/test_env.js",
     "test:retry": "node ../tests/test_retry.js",
     "test:error": "node ../tests/test_error_handling.js",
@@ -15,6 +15,8 @@
     "test:concurrency": "node ../tests/test_concurrency_guard.js",
     "test:pdf": "node ../tests/test_pdf_safeguards.js",
     "test:429": "node ../tests/test_http_429_retry.js",
+    "test:csrf": "node ../tests/test_csrf.js",
+    "test:authz": "node ../tests/test_authorization.js",
     "test:phase5": "node ../tests/test_phase5.js"
   },
   "keywords": [],

@@ -4,7 +4,12 @@ const auth = require('../middleware/auth');
 const uploadResumeFile = require('../middleware/upload');
 const validate = require('../middleware/validate');
 const { createResumeBodySchema, resumeIdParamSchema } = require('../schemas/resumeSchemas');
-const { analysisLimiter } = require('../middleware/rateLimiter');
+const {
+  analysisLimiter,
+  globalAnalysisLimiter,
+  uploadIpLimiter,
+  uploadUserLimiter,
+} = require('../middleware/rateLimiter');
 const {
   createResume,
   getResumes,
@@ -17,10 +22,18 @@ const {
 // All resume routes are protected by auth middleware
 router.use(auth);
 
-router.post('/', uploadResumeFile, validate({ body: createResumeBodySchema }), createResume);
+router.post(
+  '/',
+  uploadIpLimiter,
+  uploadUserLimiter,
+  uploadResumeFile,
+  validate({ body: createResumeBodySchema }),
+  createResume
+);
 router.post(
   '/:id/analyze',
   validate({ params: resumeIdParamSchema }),
+  globalAnalysisLimiter,
   analysisLimiter,
   analyzeResume
 );
