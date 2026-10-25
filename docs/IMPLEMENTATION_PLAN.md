@@ -2,8 +2,8 @@
 
 **Repository:** https://github.com/Anuj-135/Resume-Analyser
 **Live application:** https://resume-analyser-sooty-delta.vercel.app
-**Status:** Investigation and planning only --- no implementation
-changes authorized yet\
+**Status:** Phase 1 closed with documented limitations ---
+Phase 2 awaiting authorization\
 **Workflow:** Inspect → document findings → propose changes → request
 approval → implement one phase at a time → test → review
 
@@ -214,48 +214,106 @@ and add/repair tests rather than duplicating it.
 **Goal:** Reduce account compromise, unauthorized access, API abuse, and
 unexpected AI spending.
 
--   [ ] Add or verify Helmet with a deliberate security-header
+**Status:** Phase 1 is formally closed with documented limitations
+(not every acceptance criterion is fully verified). The previously
+reported baseline was 186 passing automated tests; the suite was not
+independently rerun during final roadmap synchronization. Cross-browser
+cookie testing on Safari and Firefox is deferred and does not block
+Phase 2.
+
+-   [x] Add or verify Helmet with a deliberate security-header
     configuration. Configure CSP carefully for the actual
     frontend/backend architecture and required external resources.
--   [ ] Add or verify Zod validation for request bodies, route
+    *(Verified in server/server.js and tests/test_error_handling.js).*
+-   [x] Add or verify Zod validation for request bodies, route
     parameters, query parameters, and environment variables.
--   [ ] Add rate limits to login and registration, with appropriate
+    *(Verified in server/schemas/ and tests/test_validation.js,
+    tests/test_env.js).*
+-   [x] Add rate limits to login and registration, with appropriate
     per-IP controls and careful handling of shared IPs.
--   [ ] Add per-user and global limits for expensive AI analysis
+    *(Implementation/configuration: loginLimiter and registerLimiter
+    are configured in server/middleware/rateLimiter.js with 10 req/15 min
+    thresholds and /56 IPv6 subnet keying. Automated boundary coverage:
+    previously reported isolated tests in tests/test_rate_limit.js
+    verified the 10-request thresholds and 11th-request HTTP 429 responses.
+    Production exhaustion: production rate-limit exhaustion was
+    deliberately not tested. Test-isolation limitation: login and
+    registration limiters lack explicit per-limiter resetKey() tests).*
+-   [x] Add per-user and global limits for expensive AI analysis
     requests; include a clear 429 response and a sensible retry message.
--   [ ] Validate required secrets at startup, including a sufficiently
+    *(Implementation/configuration: analysisLimiter [5 req/hr per user]
+    and globalAnalysisLimiter [50 req/hr process-wide] configured in
+    server/middleware/rateLimiter.js with Draft-7 headers and Retry-After.
+    Automated boundary coverage: previously reported isolated tests in
+    tests/test_rate_limit.js and tests/test_http_429_retry.js verified
+    thresholds, 429 responses, and client retry parsing. Production
+    exhaustion: production rate-limit exhaustion was deliberately
+    not tested; aggregate rate limits across multi-instance production
+    deployments have not been exhaustively verified).*
+-   [x] Validate required secrets at startup, including a sufficiently
     strong JWT secret. Never silently use an insecure production
-    default.
--   [ ] Verify password hashing, JWT expiry, cookie attributes, CORS
+    default. *(Verified in server/schemas/envSchema.js and
+    tests/test_env.js).*
+-   [x] Verify password hashing, JWT expiry, cookie attributes, CORS
     allow-list, and safe authentication error behavior.
--   [ ] Implement CSRF protection appropriate to cookie-based
+    *(Implementation verified in authController.js, server.js,
+    and tests/test_env.js; production cookie flags verified in
+    deployed Chrome, while Safari and Firefox cross-site cookie
+    behavior remain unverified).*
+-   [x] Implement CSRF protection appropriate to cookie-based
     authentication and the actual origin/deployment setup.
--   [ ] Verify authorization/ownership checks for every resume route.
--   [ ] Enforce file and request limits; add defensive PDF
+    *(Verified via custom X-Requested-With header & origin check in
+    server/middleware/csrf.js and tests/test_csrf.js).*
+-   [x] Verify authorization/ownership checks for every resume route.
+    *(Verified in resumeController.js and tests/test_authorization.js).*
+-   [x] Enforce file and request limits; add defensive PDF
     parsing/extracted-text/concurrency bounds where missing.
--   [ ] Ensure error responses do not leak stack traces, secrets,
+    *(Verified in upload.js, resumeRoutes.js, tests/test_pdf_safeguards.js,
+    tests/test_concurrency_guard.js).*
+-   [x] Ensure error responses do not leak stack traces, secrets,
     storage URLs, or provider internals.
--   [ ] Document new environment variables and deployment settings.
+    *(Verified in errorHandler.js, tests/test_error_handling.js,
+    tests/test_rate_limit.js).*
+-   [x] Document new environment variables and deployment settings.
+    *(Verified in .env.example, implementation_plan.md, and docs).*
 
 **Tests / acceptance criteria**
 
--   [ ] Invalid/missing fields return a consistent 400 response and do
-    not reach business logic.
--   [ ] Repeated authentication attempts and excessive AI calls are
-    throttled as designed.
--   [ ] Authenticated user A cannot read, analyze, download, or delete
-    user B's resume.
+-   [x] Invalid/missing fields return a consistent 400 response and do
+    not reach business logic. *(Verified by tests/test_validation.js).*
+-   [x] Repeated authentication attempts and excessive AI calls are
+    throttled as designed. *(Automated boundary coverage: previously
+    reported isolated tests in tests/test_rate_limit.js verified all
+    six rate limiters at their configured thresholds and confirmed
+    HTTP 429 transitions. Production exhaustion: production rate-limit
+    exhaustion was deliberately not tested to protect live availability
+    and prevent lockouts. Test-isolation limitation: login and registration
+    limiters lack explicit per-limiter resetKey() tests; aggregate abuse
+    resistance across multiple server instances is not verified).*
+-   [x] Authenticated user A cannot read, analyze, download, or delete
+    user B's resume. *(Verified by tests/test_authorization.js).*
 -   [ ] Production cookie options are asserted by tests and verified in
-    a deployed browser.
--   [ ] Disallowed origins are rejected; allowed origins and
-    credentialed requests work.
--   [ ] CSRF defenses reject forged state-changing requests under the
-    selected design.
--   [ ] Oversized, malformed, and non-PDF uploads fail safely.
--   [ ] Production error responses contain no stack trace or secret
-    values.
--   [ ] Existing valid registration/login/upload/analyze flows continue
-    to work.
+    a deployed browser. *(Partially verified: Production cookie options
+    and flags HttpOnly, Secure, SameSite=None, storage, session restoration,
+    and transmission passed all 7 reported manual checks in deployed
+    Google Chrome. Cross-browser cookie testing on Safari and Firefox is
+    deferred and does not block Phase 2; this criterion remains
+    unchecked until Safari and Firefox are actually tested).*
+-   [x] Disallowed origins are rejected; allowed origins and
+    credentialed requests work. *(Verified by tests/test_csrf.js and
+    CORS preflight probe).*
+-   [x] CSRF defenses reject forged state-changing requests under the
+    selected design. *(Verified by tests/test_csrf.js and Tier B
+    verification).*
+-   [x] Oversized, malformed, and non-PDF uploads fail safely.
+    *(Verified by tests/test_pdf_safeguards.js).*
+-   [x] Production error responses contain no stack trace or secret
+    values. *(Verified by tests/test_error_handling.js).*
+-   [x] Existing valid registration/login/upload/analyze flows continue
+    to work. *(Verified in local integration tiers and deployed
+    Chrome checks; the previously reported baseline was 186 passing
+    automated tests, and the suite was not independently rerun
+    during final roadmap synchronization).*
 
 ### Phase 2 --- Persistent storage and data integrity
 
